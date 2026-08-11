@@ -25,9 +25,15 @@ function migrateDb(current: Database): Database {
     if (o.stripeRefundId === undefined) o.stripeRefundId = null;
     if (o.paymentStatus === undefined) o.paymentStatus = "none";
     if (o.completedReason === undefined) o.completedReason = null;
+    if (o.relaiPickupVerifiedAt === undefined) o.relaiPickupVerifiedAt = null;
+    if (o.relaiWebhookEventId === undefined) o.relaiWebhookEventId = null;
+    if (o.pickupVerifiedVia === undefined) o.pickupVerifiedVia = null;
   }
   if (!Array.isArray(current.processedStripeEvents)) {
     current.processedStripeEvents = [];
+  }
+  if (!Array.isArray(current.processedRelaiEvents)) {
+    current.processedRelaiEvents = [];
   }
   return current;
 }

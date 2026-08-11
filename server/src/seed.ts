@@ -130,5 +130,6 @@ export function createSeedDatabase(): Database {
     orders: [],
     favorites: [],
     processedStripeEvents: [],
+    processedRelaiEvents: [],
   };
 }

@@ -60,6 +60,9 @@ export interface Order {
   relaiOrderId: string | null;
   pickupLinkCode: string | null;
   pickupLinkExpiresAt: string | null;
+  relaiPickupVerifiedAt?: string | null;
+  relaiWebhookEventId?: string | null;
+  pickupVerifiedVia?: "webhook" | "poll" | null;
   stripePaymentIntentId?: string | null;
   stripeTransferId?: string | null;
   stripeRefundId?: string | null;

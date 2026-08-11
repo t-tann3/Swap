@@ -5,6 +5,7 @@ import { requireAuth } from "../auth.js";
 import { LISTING_CATEGORIES } from "../categories.js";
 import { getDb, mutateDb, newId, resetDb } from "../db.js";
 import {
+  ensurePickupVerifiedFromRelai,
   finalizeOrderEscrow,
   refundOrderEscrow,
   resolvePickupDeadline,
@@ -362,6 +363,9 @@ marketplaceRouter.post("/listings/:id/buy", requireAuth, async (req, res) => {
         relaiOrderId: null,
         pickupLinkCode: null,
         pickupLinkExpiresAt: null,
+        relaiPickupVerifiedAt: null,
+        relaiWebhookEventId: null,
+        pickupVerifiedVia: null,
         stripePaymentIntentId: paymentIntentId,
         stripeTransferId: null,
         stripeRefundId: null,
@@ -575,6 +579,9 @@ marketplaceRouter.post("/orders/:id/complete", requireAuth, async (req, res) => 
   }
 
   try {
+    // Trusted release: Relai must confirm pickup (webhook may have already done this).
+    // Polling Relai is the fallback when the client finishes unlock before the webhook arrives.
+    await ensurePickupVerifiedFromRelai(existing);
     const order = await finalizeOrderEscrow(existing.id, "pickup");
     res.json({
       ...order,
@@ -594,7 +601,15 @@ marketplaceRouter.post("/orders/:id/complete", requireAuth, async (req, res) => 
               ? "This payment is under dispute; escrow cannot be released yet."
               : code === "escrow_busy"
                 ? "Escrow is already being finalized. Try again in a moment."
-                : "Could not release escrow payment.",
+                : code === "pickup_not_verified"
+                  ? "Waiting for Relai to confirm compartment pickup. Try again in a moment."
+                  : code === "relai_secret_unconfigured"
+                    ? "Server is missing RELAI_SECRET_KEY; cannot verify pickup with Relai."
+                    : code === "relai_status_unavailable"
+                      ? "Could not reach Relai to verify pickup. Try again shortly."
+                      : code === "relai_order_missing"
+                        ? "This order has no Relai pickup order to verify."
+                        : "Could not release escrow payment.",
     });
   }
 });

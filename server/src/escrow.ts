@@ -1,6 +1,7 @@
 import { getDb, mutateDb } from "./db.js";
 import { refundEscrowPayment, releasePaymentOnPickup } from "./payments.js";
-import type { CompletedReason, Order } from "./types.js";
+import { fetchRelaiOrderStatus } from "./relai.js";
+import type { CompletedReason, Order, PickupVerifiedVia } from "./types.js";
 
 /** Single-process guard against concurrent finalize/refund for the same order. */
 const busyOrders = new Set<string>();
@@ -51,6 +52,64 @@ export function isPickupDeadlinePassed(order: Order, now = Date.now()): boolean 
   return Number.isFinite(ms) && ms <= now;
 }
 
+export function findOrderByRelaiOrderId(relaiOrderId: string): Order | undefined {
+  return getDb().orders.find(o => o.relaiOrderId === relaiOrderId);
+}
+
+/** Record Relai proof of buyer pickup (idempotent). */
+export async function markRelaiPickupVerified(
+  orderId: string,
+  via: PickupVerifiedVia,
+  webhookEventId?: string | null,
+): Promise<Order> {
+  let order: Order | undefined;
+  await mutateDb(db => {
+    order = db.orders.find(o => o.id === orderId);
+    if (!order) {
+      throw Object.assign(new Error("not_found"), { status: 404 });
+    }
+    if (order.relaiPickupVerifiedAt) return;
+    const ts = new Date().toISOString();
+    order.relaiPickupVerifiedAt = ts;
+    order.pickupVerifiedVia = via;
+    if (webhookEventId) {
+      order.relaiWebhookEventId = webhookEventId;
+    }
+    order.updatedAt = ts;
+  });
+  return order!;
+}
+
+/**
+ * Poll Relai with the server secret key and mark pickup verified when the
+ * Relai order is already `completed`. Used by POST /complete as a webhook fallback.
+ */
+export async function ensurePickupVerifiedFromRelai(order: Order): Promise<Order> {
+  if (order.relaiPickupVerifiedAt) return order;
+  if (!order.relaiOrderId) {
+    throw Object.assign(new Error("relai_order_missing"), { status: 409 });
+  }
+
+  let status: "open" | "completed" | "cancelled" | "refunded";
+  try {
+    status = await fetchRelaiOrderStatus(order.relaiOrderId);
+  } catch (err) {
+    if (err instanceof Error && err.message === "relai_secret_unconfigured") {
+      throw err;
+    }
+    console.warn(
+      `[escrow] Relai order poll failed order=${order.id}`,
+      err instanceof Error ? err.message : err,
+    );
+    throw Object.assign(new Error("relai_status_unavailable"), { status: 502 });
+  }
+
+  if (status !== "completed") {
+    throw Object.assign(new Error("pickup_not_verified"), { status: 409 });
+  }
+  return markRelaiPickupVerified(order.id, "poll");
+}
+
 export async function finalizeOrderEscrow(
   orderId: string,
   reason: CompletedReason,
@@ -68,6 +127,10 @@ export async function finalizeOrderEscrow(
     }
     if (existing.paymentStatus === "disputed") {
       throw Object.assign(new Error("payment_disputed"), { status: 409 });
+    }
+    // Buyer pickup must be proven by Relai (webhook or poll). No-show does not.
+    if (reason === "pickup" && !existing.relaiPickupVerifiedAt) {
+      throw Object.assign(new Error("pickup_not_verified"), { status: 409 });
     }
 
     const payout = await releasePaymentOnPickup(existing);

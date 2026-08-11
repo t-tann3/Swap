@@ -31,6 +31,9 @@ export type PaymentStatus =
 /** How a completed order finished escrow. */
 export type CompletedReason = "pickup" | "no_show";
 
+/** How Relai pickup was proven before escrow release. */
+export type PickupVerifiedVia = "webhook" | "poll";
+
 export interface Profile {
   userId: string;
   email: string | null;
@@ -82,6 +85,15 @@ export interface Order {
    * drop-off + PICKUP_NO_SHOW_HOURS). After this, funds release to the seller.
    */
   pickupLinkExpiresAt: string | null;
+  /**
+   * Set when Relai confirms buyer pickup (webhook `order.completed` or
+   * server poll of Relai order status). Required before escrow release for
+   * `completedReason: "pickup"`. No-show releases do not use this.
+   */
+  relaiPickupVerifiedAt: string | null;
+  /** Relai webhook event id that proved pickup (if via webhook). */
+  relaiWebhookEventId: string | null;
+  pickupVerifiedVia: PickupVerifiedVia | null;
   /** Platform PaymentIntent holding buyer funds until pickup or no-show. */
   stripePaymentIntentId: string | null;
   stripeTransferId: string | null;
@@ -107,4 +119,6 @@ export interface Database {
   favorites: Favorite[];
   /** Recent Stripe webhook event ids (idempotency). */
   processedStripeEvents: string[];
+  /** Recent Relai webhook event ids (idempotency). */
+  processedRelaiEvents: string[];
 }
