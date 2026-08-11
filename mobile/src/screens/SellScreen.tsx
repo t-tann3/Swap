@@ -15,6 +15,10 @@ import {
   LISTING_CATEGORIES,
   type ListingCategory,
 } from "../marketplace/categories";
+import {
+  COMPARTMENT_SIZES,
+  type CompartmentSizeId,
+} from "../marketplace/compartmentSizes";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { SellStackParamList } from "../navigation/types";
 
@@ -26,6 +30,8 @@ export function SellScreen({ navigation }: Props) {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState<ListingCategory>("General");
+  const [compartmentSize, setCompartmentSize] =
+    useState<CompartmentSizeId>("M");
   const [busy, setBusy] = useState(false);
 
   if (!profile?.roles.includes("seller")) {
@@ -61,6 +67,7 @@ export function SellScreen({ navigation }: Props) {
         title,
         description,
         category,
+        compartmentSize,
         priceCents: Math.round(dollars * 100),
         condition: "good",
         locationLabel: "Local Exchange Zone",
@@ -69,6 +76,7 @@ export function SellScreen({ navigation }: Props) {
       setDescription("");
       setPrice("");
       setCategory("General");
+      setCompartmentSize("M");
       Alert.alert("Posted", "Your listing is live for buyers.");
     } catch (err) {
       Alert.alert(
@@ -89,6 +97,10 @@ export function SellScreen({ navigation }: Props) {
       ListHeaderComponent={
         <View style={styles.form}>
           <Text style={styles.heading}>Post an item</Text>
+          <Text style={styles.help}>
+            Items must fit a Relai Exchange Zone Full Tower door (max about
+            24″×16″×21″). Pick the smallest compartment that fits.
+          </Text>
           <TextInput
             style={styles.input}
             placeholder="Title"
@@ -128,6 +140,22 @@ export function SellScreen({ navigation }: Props) {
               );
             })}
           </View>
+          <Text style={styles.label}>Compartment size</Text>
+          {COMPARTMENT_SIZES.map(size => {
+            const active = compartmentSize === size.id;
+            return (
+              <Pressable
+                key={size.id}
+                style={[styles.sizeCard, active && styles.sizeCardOn]}
+                onPress={() => setCompartmentSize(size.id)}>
+                <Text style={styles.sizeTitle}>
+                  {size.label} · ≤ {size.maxHeightIn}×{size.maxWidthIn}×
+                  {size.maxDepthIn}&quot;
+                </Text>
+                <Text style={styles.sizeDesc}>{size.description}</Text>
+              </Pressable>
+            );
+          })}
           <Pressable
             style={[styles.button, busy && styles.buttonDisabled]}
             onPress={onPost}
@@ -181,6 +209,34 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 88,
     textAlignVertical: "top",
+  },
+  help: {
+    fontSize: 13,
+    color: "#5c6370",
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  sizeCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#f3f4f6",
+    padding: 12,
+    marginBottom: 8,
+  },
+  sizeCardOn: {
+    borderColor: "#111827",
+  },
+  sizeTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  sizeDesc: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#5c6370",
+    lineHeight: 16,
   },
   label: {
     fontSize: 14,

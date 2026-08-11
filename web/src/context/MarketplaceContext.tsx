@@ -138,10 +138,12 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
   }, [me, status, refresh]);
 
   const setRoles = useCallback(async (roles: MarketplaceRole[], bio?: string) => {
+    // Admin is allowlist-only; never send it in self-serve role updates.
+    const selfServe = roles.filter(r => r === "buyer" || r === "seller");
     const next = await apiRequest<UserProfile>("/api/me/profile", {
       method: "PUT",
       auth: true,
-      body: JSON.stringify({ roles, bio }),
+      body: JSON.stringify({ roles: selfServe, bio }),
     });
     setProfile({
       userId: next.userId,

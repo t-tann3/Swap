@@ -1,4 +1,4 @@
-export type MarketplaceRole = "buyer" | "seller";
+export type MarketplaceRole = "buyer" | "seller" | "admin";
 
 export type OrderStatus =
   | "pending_accept"
@@ -7,7 +7,7 @@ export type OrderStatus =
   | "completed"
   | "cancelled";
 
-export type CompletedReason = "pickup" | "no_show";
+export type CompletedReason = "pickup" | "no_show" | "admin_release";
 
 export type ItemCondition = "new" | "like_new" | "good" | "fair";
 
@@ -39,6 +39,8 @@ export interface Listing {
   description: string;
   priceCents: number;
   category: string;
+  /** Relai Exchange Zone compartment size (S/M/L). Required. */
+  compartmentSize: "S" | "M" | "L";
   condition: ItemCondition;
   locationLabel: string;
   status: string;
@@ -57,17 +59,25 @@ export interface Order {
   exchangeZoneId: string;
   exchangeZoneName: string;
   exchangeZoneAddress: string | null;
+  compartmentSize?: "S" | "M" | "L";
   relaiOrderId: string | null;
   pickupLinkCode: string | null;
   pickupLinkExpiresAt: string | null;
+  sellerAcceptDeadlineAt?: string | null;
+  sellerDropOffDeadlineAt?: string | null;
   relaiPickupVerifiedAt?: string | null;
   relaiWebhookEventId?: string | null;
   pickupVerifiedVia?: "webhook" | "poll" | null;
   stripePaymentIntentId?: string | null;
   stripeTransferId?: string | null;
   stripeRefundId?: string | null;
+  transferLastError?: string | null;
   paymentStatus?: PaymentStatus;
+  stripeDisputeId?: string | null;
+  disputeStatus?: string | null;
+  adminHold?: boolean;
   completedReason?: CompletedReason | null;
+  cancelledReason?: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -79,6 +89,7 @@ export interface CreateListingInput {
   description: string;
   priceCents: number;
   category: string;
+  compartmentSize: "S" | "M" | "L";
   condition?: ItemCondition;
   locationLabel?: string;
 }

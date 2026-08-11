@@ -46,12 +46,12 @@ export function AccountScreen() {
     }, []),
   );
 
-  async function toggle(role: MarketplaceRole) {
-    const next = roles.includes(role)
-      ? roles.filter(r => r !== role)
-      : [...roles, role];
+  async function toggle(role: "buyer" | "seller") {
+    const next = (["buyer", "seller"] as const).filter(
+      r => (r === role ? !roles.includes(r) : roles.includes(r)),
+    );
     if (next.length === 0) return;
-    await setRoles(next);
+    await setRoles(next as MarketplaceRole[]);
   }
 
   async function startConnect() {
@@ -91,6 +91,11 @@ export function AccountScreen() {
         onPress={() => void toggle("seller")}>
         <Text style={styles.chipText}>Seller</Text>
       </Pressable>
+      {roles.includes("admin") ? (
+        <View style={[styles.chip, styles.chipOn]}>
+          <Text style={styles.chipText}>Admin (operator)</Text>
+        </View>
+      ) : null}
 
       {roles.includes("seller") && paymentsEnabled ? (
         <>

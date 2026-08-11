@@ -88,6 +88,8 @@ export function DropOffScreen({ route, navigation }: Props) {
       const result = await relai.unlock({
         orderId: relaiOrder.id,
         intent: Intents.Occupy,
+        // Open a door matching the listing's Exchange Zone size tag.
+        size: order.compartmentSize ?? order.listing?.compartmentSize ?? "M",
         transport,
       });
 

@@ -26,5 +26,6 @@ export type RootTabParamList = {
   FavoritesTab: undefined;
   SellTab: undefined;
   OrdersTab: undefined;
+  AdminTab: undefined;
   AccountTab: undefined;
 };

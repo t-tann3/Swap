@@ -2,8 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isCompartmentSizeId } from "./compartmentSizes.js";
 import { createSeedDatabase } from "./seed.js";
-import type { Database, Order, Profile } from "./types.js";
+import type { Database, Listing, Order, Profile } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "..", "data");
@@ -18,8 +19,22 @@ function migrateDb(current: Database): Database {
     if (p.stripeAccountId === undefined) p.stripeAccountId = null;
     if (p.stripePayoutsReady === undefined) p.stripePayoutsReady = false;
   }
+  for (const listing of current.listings) {
+    const l = listing as Listing;
+    if (!isCompartmentSizeId(String(l.compartmentSize ?? ""))) {
+      // Legacy rows: Medium fits most demo inventory inside a Full Tower.
+      l.compartmentSize = "M";
+    }
+  }
   for (const order of current.orders) {
     const o = order as Order;
+    if (!isCompartmentSizeId(String(o.compartmentSize ?? ""))) {
+      const listing = current.listings.find(l => l.id === o.listingId);
+      o.compartmentSize =
+        listing && isCompartmentSizeId(listing.compartmentSize)
+          ? listing.compartmentSize
+          : "M";
+    }
     if (o.stripePaymentIntentId === undefined) o.stripePaymentIntentId = null;
     if (o.stripeTransferId === undefined) o.stripeTransferId = null;
     if (o.stripeRefundId === undefined) o.stripeRefundId = null;
@@ -28,6 +43,16 @@ function migrateDb(current: Database): Database {
     if (o.relaiPickupVerifiedAt === undefined) o.relaiPickupVerifiedAt = null;
     if (o.relaiWebhookEventId === undefined) o.relaiWebhookEventId = null;
     if (o.pickupVerifiedVia === undefined) o.pickupVerifiedVia = null;
+    if (o.sellerAcceptDeadlineAt === undefined) o.sellerAcceptDeadlineAt = null;
+    if (o.sellerDropOffDeadlineAt === undefined) o.sellerDropOffDeadlineAt = null;
+    if (o.transferLastError === undefined) o.transferLastError = null;
+    if (o.paymentStatusBeforeDispute === undefined) {
+      o.paymentStatusBeforeDispute = null;
+    }
+    if (o.stripeDisputeId === undefined) o.stripeDisputeId = null;
+    if (o.disputeStatus === undefined) o.disputeStatus = null;
+    if (o.adminHold === undefined) o.adminHold = false;
+    if (o.cancelledReason === undefined) o.cancelledReason = null;
   }
   if (!Array.isArray(current.processedStripeEvents)) {
     current.processedStripeEvents = [];

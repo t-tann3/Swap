@@ -32,6 +32,7 @@ export function ListingCard({
         </View>
         <View style={styles.tagRow}>
           <Text style={styles.categoryTag}>{item.category}</Text>
+          <Text style={styles.sizeTag}>Size {item.compartmentSize ?? "?"}</Text>
           <Text style={styles.meta}>
             {item.condition.replace("_", " ")}
             {rightLabel ? ` · ${rightLabel}` : ""}
@@ -88,6 +89,18 @@ const styles = StyleSheet.create({
   categoryTag: {
     backgroundColor: "#eef2ff",
     color: "#3730a3",
+    fontSize: 11,
+    fontWeight: "700",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: "hidden",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  sizeTag: {
+    backgroundColor: "#f3f4f6",
+    color: "#374151",
     fontSize: 11,
     fontWeight: "700",
     paddingHorizontal: 8,

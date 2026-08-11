@@ -8,6 +8,10 @@ import {
   LISTING_CATEGORIES,
   type ListingCategory,
 } from "../../lib/categories";
+import {
+  COMPARTMENT_SIZES,
+  type CompartmentSizeId,
+} from "../../lib/compartmentSizes";
 
 export default function SellPage() {
   const { profile, myListings, createListing, showPrices } = useMarketplace();
@@ -15,6 +19,8 @@ export default function SellPage() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState<ListingCategory>("General");
+  const [compartmentSize, setCompartmentSize] =
+    useState<CompartmentSizeId>("M");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -51,6 +57,7 @@ export default function SellPage() {
         title,
         description,
         category,
+        compartmentSize,
         priceCents: Math.round(dollars * 100),
         condition: "good",
         locationLabel: "Local Exchange Zone",
@@ -59,6 +66,7 @@ export default function SellPage() {
       setDescription("");
       setPrice("");
       setCategory("General");
+      setCompartmentSize("M");
       setMessage("Listing posted.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not post");
@@ -71,6 +79,10 @@ export default function SellPage() {
     <div className="grid gap-8 lg:grid-cols-2">
       <form onSubmit={onSubmit} className="rounded-2xl bg-white p-5 shadow-sm">
         <h1 className="text-2xl font-bold">Post an item</h1>
+        <p className="mt-2 text-sm text-zinc-600">
+          Every item must fit a Relai Exchange Zone Full Tower compartment (max
+          usable about 24″×16″×21″). Choose the smallest door that fits.
+        </p>
         <div className="mt-4 space-y-3">
           <input
             className="w-full rounded-xl border border-zinc-200 px-4 py-3"
@@ -107,6 +119,31 @@ export default function SellPage() {
                   }`}
                 >
                   {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-semibold">
+              Exchange Zone compartment size
+            </p>
+            <div className="space-y-2">
+              {COMPARTMENT_SIZES.map(size => (
+                <button
+                  key={size.id}
+                  type="button"
+                  onClick={() => setCompartmentSize(size.id)}
+                  className={`w-full rounded-xl border-2 px-4 py-3 text-left ${
+                    compartmentSize === size.id
+                      ? "border-zinc-900"
+                      : "border-zinc-100"
+                  }`}
+                >
+                  <p className="font-semibold">
+                    {size.label} · max {size.maxHeightIn}×{size.maxWidthIn}×
+                    {size.maxDepthIn}&quot;
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-600">{size.description}</p>
                 </button>
               ))}
             </div>

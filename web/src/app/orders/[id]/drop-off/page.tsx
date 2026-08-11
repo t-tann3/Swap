@@ -43,6 +43,7 @@ export default function DropOffPage() {
       const result = await relai.unlock({
         orderId: relaiOrder.id,
         intent: Intents.Occupy,
+        size: order.compartmentSize ?? order.listing?.compartmentSize ?? "M",
         transport: createSandboxTransport(),
       });
       const link = result.open.access_link;

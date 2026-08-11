@@ -243,22 +243,132 @@ export async function releasePaymentOnPickup(order: Order): Promise<{
     throw Object.assign(new Error("payment_capture_failed"), { status: 402 });
   }
 
-  const transfer = await stripe.transfers.create(
-    {
-      amount: transferCents,
-      currency: "usd",
-      destination: stripeAccountId,
-      transfer_group: pi.transfer_group ?? undefined,
-      source_transaction: source,
-      metadata: {
-        order_id: latest.id,
-        seller_user_id: sellerId,
+  try {
+    const transfer = await stripe.transfers.create(
+      {
+        amount: transferCents,
+        currency: "usd",
+        destination: stripeAccountId,
+        transfer_group: pi.transfer_group ?? undefined,
+        source_transaction: source,
+        metadata: {
+          order_id: latest.id,
+          seller_user_id: sellerId,
+        },
       },
-    },
-    { idempotencyKey: `transfer_${latest.id}_${piId}` },
-  );
+      { idempotencyKey: `transfer_${latest.id}_${piId}` },
+    );
 
-  return { paymentStatus: "transferred", stripeTransferId: transfer.id };
+    await mutateDb(db => {
+      const o = db.orders.find(x => x.id === latest.id);
+      if (o) {
+        o.transferLastError = null;
+        o.updatedAt = new Date().toISOString();
+      }
+    });
+
+    return { paymentStatus: "transferred", stripeTransferId: transfer.id };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "transfer_failed";
+    await mutateDb(db => {
+      const o = db.orders.find(x => x.id === latest.id);
+      if (o) {
+        o.paymentStatus = "captured";
+        o.transferLastError = message.slice(0, 500);
+        o.updatedAt = new Date().toISOString();
+      }
+    });
+    throw Object.assign(new Error("transfer_failed"), {
+      status: 502,
+      cause: err,
+    });
+  }
+}
+
+/** Stripe snapshot for admin inspection (no secrets). */
+export async function inspectOrderStripe(order: Order): Promise<{
+  paymentIntent: {
+    id: string;
+    status: string;
+    amount: number;
+    captureMethod: string | null;
+  } | null;
+  transfer: {
+    id: string;
+    amount: number;
+    destination: string | null;
+    reversed: boolean;
+  } | null;
+  refund: { id: string; status: string | null; amount: number } | null;
+  dispute: {
+    id: string;
+    status: string;
+    reason: string | null;
+    amount: number;
+  } | null;
+}> {
+  if (!paymentsEnabled() || !order.stripePaymentIntentId) {
+    return {
+      paymentIntent: null,
+      transfer: null,
+      refund: null,
+      dispute: null,
+    };
+  }
+
+  const stripe = getStripe();
+  const pi = await stripe.paymentIntents.retrieve(order.stripePaymentIntentId);
+
+  let transfer: {
+    id: string;
+    amount: number;
+    destination: string | null;
+    reversed: boolean;
+  } | null = null;
+  if (order.stripeTransferId) {
+    const t = await stripe.transfers.retrieve(order.stripeTransferId);
+    transfer = {
+      id: t.id,
+      amount: t.amount,
+      destination: typeof t.destination === "string" ? t.destination : null,
+      reversed: Boolean(t.reversed),
+    };
+  }
+
+  let refund: { id: string; status: string | null; amount: number } | null =
+    null;
+  if (order.stripeRefundId) {
+    const r = await stripe.refunds.retrieve(order.stripeRefundId);
+    refund = { id: r.id, status: r.status, amount: r.amount };
+  }
+
+  let dispute: {
+    id: string;
+    status: string;
+    reason: string | null;
+    amount: number;
+  } | null = null;
+  if (order.stripeDisputeId) {
+    const d = await stripe.disputes.retrieve(order.stripeDisputeId);
+    dispute = {
+      id: d.id,
+      status: d.status,
+      reason: d.reason ?? null,
+      amount: d.amount,
+    };
+  }
+
+  return {
+    paymentIntent: {
+      id: pi.id,
+      status: pi.status,
+      amount: pi.amount,
+      captureMethod: pi.capture_method ?? null,
+    },
+    transfer,
+    refund,
+    dispute,
+  };
 }
 
 /**

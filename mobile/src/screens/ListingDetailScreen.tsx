@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import { apiRequest } from "../api/client";
+import { formatCompartmentSize } from "../marketplace/compartmentSizes";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { Listing } from "../marketplace/types";
 
@@ -110,11 +111,17 @@ export function ListingDetailScreen({ route, navigation }: Props) {
       ) : null}
       <View style={styles.tagRow}>
         <Text style={styles.categoryTag}>{listing.category}</Text>
+        <Text style={styles.sizeTag}>
+          {formatCompartmentSize(listing.compartmentSize)}
+        </Text>
         <Text style={styles.meta}>
           {listing.condition.replace("_", " ")} · {listing.status}
         </Text>
       </View>
       <Text style={styles.body}>{listing.description}</Text>
+      <Text style={styles.meta}>
+        Must fit a Relai Exchange Zone {listing.compartmentSize} compartment.
+      </Text>
       <Text style={styles.meta}>Pickup area: {listing.locationLabel}</Text>
       <Text style={styles.meta}>
         Seller: {listing.sellerName ?? listing.sellerEmail ?? "Seller"}
@@ -190,6 +197,16 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     textTransform: "uppercase",
     letterSpacing: 0.3,
+  },
+  sizeTag: {
+    backgroundColor: "#f3f4f6",
+    color: "#374151",
+    fontSize: 12,
+    fontWeight: "700",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    overflow: "hidden",
   },
   meta: {
     fontSize: 13,

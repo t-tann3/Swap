@@ -159,10 +159,11 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
 
   const setRoles = useCallback(
     async (roles: MarketplaceRole[], bio?: string) => {
+      const selfServe = roles.filter(r => r === "buyer" || r === "seller");
       const next = await apiRequest<UserProfile>("/api/me/profile", {
         method: "PUT",
         auth: true,
-        body: JSON.stringify({ roles, bio }),
+        body: JSON.stringify({ roles: selfServe, bio }),
       });
       setProfile({
         userId: next.userId,

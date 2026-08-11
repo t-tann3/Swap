@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "../../context/AuthContext";
@@ -59,12 +60,17 @@ export default function AccountPage() {
     }
   }, [refresh]);
 
-  async function toggle(role: MarketplaceRole) {
+  async function toggle(role: "buyer" | "seller") {
     const next = roles.includes(role)
       ? roles.filter(r => r !== role)
-      : [...roles, role];
-    if (!next.length) return;
-    await setRoles(next);
+      : [...roles.filter(r => r === "buyer" || r === "seller"), role];
+    // Keep admin if present — server also re-applies allowlist.
+    if (roles.includes("admin")) next.push("admin");
+    const selfServe = next.filter((r): r is "buyer" | "seller" =>
+      r === "buyer" || r === "seller",
+    );
+    if (!selfServe.length) return;
+    await setRoles(selfServe as MarketplaceRole[]);
   }
 
   async function startConnect() {
@@ -108,6 +114,21 @@ export default function AccountPage() {
             {role}
           </button>
         ))}
+        {roles.includes("admin") ? (
+          <div className="rounded-xl border-2 border-zinc-900 bg-zinc-50 px-4 py-3">
+            <p className="font-semibold">Admin</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              Granted by Swap operators — resolve disputes and approve escrow
+              actions.
+            </p>
+            <Link
+              href="/admin"
+              className="mt-3 inline-block text-sm font-semibold text-zinc-900 underline"
+            >
+              Open admin console
+            </Link>
+          </div>
+        ) : null}
       </div>
 
       {roles.includes("seller") && paymentsEnabled ? (

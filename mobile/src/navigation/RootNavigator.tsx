@@ -5,6 +5,7 @@ import {
   Heart,
   Home,
   Package,
+  Shield,
   Store,
   UserRound,
 } from "lucide-react-native";
@@ -14,6 +15,7 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { useAuth } from "../auth/AuthContext";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import { AccountScreen } from "../screens/AccountScreen";
+import { AdminScreen } from "../screens/AdminScreen";
 import { BrowseScreen } from "../screens/BrowseScreen";
 import { CheckoutScreen } from "../screens/CheckoutScreen";
 import { FavoritesScreen } from "../screens/FavoritesScreen";
@@ -131,6 +133,7 @@ function MainTabs() {
   const { profile } = useMarketplace();
   const isBuyer = profile?.roles.includes("buyer") ?? false;
   const isSeller = profile?.roles.includes("seller") ?? false;
+  const isAdmin = profile?.roles.includes("admin") ?? false;
 
   return (
     <Tab.Navigator
@@ -195,6 +198,19 @@ function MainTabs() {
           ),
         }}
       />
+      {isAdmin ? (
+        <Tab.Screen
+          name="AdminTab"
+          component={AdminScreen}
+          options={{
+            title: "Admin",
+            headerShown: true,
+            tabBarIcon: ({ color, size }) => (
+              <Shield color={color} size={size} strokeWidth={2.25} />
+            ),
+          }}
+        />
+      ) : null}
       <Tab.Screen
         name="AccountTab"
         component={AccountScreen}

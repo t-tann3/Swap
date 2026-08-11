@@ -3,6 +3,11 @@ import type Stripe from "stripe";
 
 import { mutateDb } from "../db.js";
 import {
+  applyDisputeClosed,
+  applyDisputeOpened,
+  mapStripeDisputeStatus,
+} from "../escrow.js";
+import {
   findOrderByPaymentIntentId,
   refreshPayoutReadinessByAccountId,
 } from "../payments.js";
@@ -26,6 +31,10 @@ async function markEventProcessed(eventId: string): Promise<boolean> {
     }
   });
   return isNew;
+}
+
+function orderIdFromTransfer(transfer: Stripe.Transfer): string | undefined {
+  return transfer.metadata?.order_id || undefined;
 }
 
 async function handleStripeEvent(event: Stripe.Event): Promise<void> {
@@ -76,19 +85,120 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       if (!piId) break;
       const order = findOrderByPaymentIntentId(piId);
       if (!order) break;
-      await mutateDb(db => {
-        const o = db.orders.find(x => x.id === order.id);
-        if (!o) return;
-        o.paymentStatus = "disputed";
-        o.updatedAt = new Date().toISOString();
-      });
+      await applyDisputeOpened(
+        order.id,
+        dispute.id,
+        mapStripeDisputeStatus(dispute.status),
+      );
       console.warn(
         `[stripe] dispute created order=${order.id} dispute=${dispute.id}`,
       );
       break;
     }
+    case "charge.dispute.closed": {
+      const dispute = event.data.object as Stripe.Dispute;
+      const piId =
+        typeof dispute.payment_intent === "string"
+          ? dispute.payment_intent
+          : dispute.payment_intent?.id;
+      if (!piId) break;
+      const order = findOrderByPaymentIntentId(piId);
+      if (!order) break;
+      await applyDisputeClosed(order.id, mapStripeDisputeStatus(dispute.status));
+      console.warn(
+        `[stripe] dispute closed order=${order.id} status=${dispute.status}`,
+      );
+      break;
+    }
+    case "charge.refunded": {
+      const charge = event.data.object as Stripe.Charge;
+      const piId =
+        typeof charge.payment_intent === "string"
+          ? charge.payment_intent
+          : charge.payment_intent?.id;
+      if (!piId) break;
+      const order = findOrderByPaymentIntentId(piId);
+      if (!order) break;
+      if (
+        order.paymentStatus === "transferred" ||
+        order.status === "completed"
+      ) {
+        // May be partial / dispute-related — flag for ops rather than auto-cancel.
+        await mutateDb(db => {
+          const o = db.orders.find(x => x.id === order.id);
+          if (!o) return;
+          o.transferLastError =
+            o.transferLastError ?? "charge.refunded webhook received";
+          o.updatedAt = new Date().toISOString();
+        });
+        console.warn(`[stripe] charge.refunded order=${order.id}`);
+        break;
+      }
+      await mutateDb(db => {
+        const o = db.orders.find(x => x.id === order.id);
+        if (!o) return;
+        if (o.paymentStatus !== "refunded" && o.paymentStatus !== "cancelled") {
+          o.paymentStatus = "refunded";
+          o.updatedAt = new Date().toISOString();
+        }
+      });
+      break;
+    }
+    case "transfer.created": {
+      const transfer = event.data.object as Stripe.Transfer;
+      const orderId = orderIdFromTransfer(transfer);
+      if (!orderId) break;
+      await mutateDb(db => {
+        const o = db.orders.find(x => x.id === orderId);
+        if (!o) return;
+        o.stripeTransferId = transfer.id;
+        o.paymentStatus = "transferred";
+        o.transferLastError = null;
+        o.updatedAt = new Date().toISOString();
+      });
+      break;
+    }
+    case "transfer.reversed": {
+      const transfer = event.data.object as Stripe.Transfer;
+      const orderId = orderIdFromTransfer(transfer);
+      if (!orderId) {
+        console.warn(`[stripe] transfer.reversed id=${transfer.id} (no order metadata)`);
+        break;
+      }
+      await mutateDb(db => {
+        const o = db.orders.find(x => x.id === orderId);
+        if (!o) return;
+        o.paymentStatus = "captured";
+        o.stripeTransferId = null;
+        o.transferLastError = "transfer.reversed";
+        o.adminHold = true;
+        o.updatedAt = new Date().toISOString();
+      });
+      console.warn(
+        `[stripe] transfer.reversed order=${orderId} transfer=${transfer.id}`,
+      );
+      break;
+    }
     default: {
-      // Some Connect payout failures surface as transfer.* variants depending on API version.
+      if (String(event.type) === "transfer.failed") {
+        const transfer = event.data.object as Stripe.Transfer;
+        const orderId = orderIdFromTransfer(transfer);
+        if (orderId) {
+          await mutateDb(db => {
+            const o = db.orders.find(x => x.id === orderId);
+            if (!o) return;
+            o.paymentStatus = "captured";
+            o.stripeTransferId = null;
+            o.transferLastError = "transfer.failed";
+            o.adminHold = true;
+            o.updatedAt = new Date().toISOString();
+          });
+        }
+        console.warn(
+          `[stripe] transfer.failed id=${transfer.id} order=${orderId ?? "?"}`,
+        );
+        break;
+      }
       if (String(event.type).startsWith("transfer.")) {
         const transfer = event.data.object as Stripe.Transfer;
         console.warn(
@@ -150,7 +260,6 @@ stripeWebhookRouter.post("/", async (req: Request, res: Response) => {
     await handleStripeEvent(event);
     res.json({ received: true });
   } catch (err) {
-    // Allow Stripe to retry — drop the event id so the next delivery re-runs.
     await mutateDb(db => {
       db.processedStripeEvents = (db.processedStripeEvents ?? []).filter(
         id => id !== event.id,

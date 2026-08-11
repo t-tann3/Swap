@@ -12,6 +12,7 @@ const links = [
   { href: "/favorites", label: "Saved", role: "buyer" as const },
   { href: "/sell", label: "Sell", role: "seller" as const },
   { href: "/orders", label: "Orders", role: null },
+  { href: "/admin", label: "Admin", role: "admin" as const },
   { href: "/account", label: "Account", role: null },
 ];
 
@@ -66,13 +67,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <nav className="flex flex-wrap items-center gap-1">
             {links
-              .filter(
-                l =>
-                  !l.role ||
-                  roles.includes(l.role) ||
-                  (l.role === "buyer" && roles.includes("buyer")) ||
-                  (l.role === "seller" && roles.includes("seller")),
-              )
+              .filter(l => !l.role || roles.includes(l.role))
               .map(l => {
                 const active = pathname.startsWith(l.href);
                 return (

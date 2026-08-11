@@ -2,8 +2,10 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 
+import { adminApiConfigured } from "./adminAuth.js";
 import { initDb } from "./db.js";
 import { startEscrowScheduler } from "./escrow.js";
+import { adminRouter } from "./routes/admin.js";
 import { marketplaceRouter } from "./routes/marketplace.js";
 import { paymentsRouter } from "./routes/payments.js";
 import {
@@ -44,11 +46,13 @@ app.get("/health", (_req, res) => {
     stripeWebhooksConfigured: stripeWebhooksConfigured(),
     relaiWebhooksConfigured: relaiWebhooksConfigured(),
     relaiServerApiConfigured: relaiServerApiConfigured(),
+    adminApiConfigured: adminApiConfigured(),
   });
 });
 
 app.use("/api", marketplaceRouter);
 app.use("/api/payments", paymentsRouter);
+app.use("/api/admin", adminRouter);
 
 await initDb();
 startEscrowScheduler();
@@ -72,6 +76,11 @@ app.listen(port, () => {
   if (!relaiServerApiConfigured()) {
     console.log(
       "Relai server API not configured. Set RELAI_SECRET_KEY so /complete can poll Relai when webhooks are delayed.",
+    );
+  }
+  if (!adminApiConfigured()) {
+    console.log(
+      "Admin role not configured. Set ADMIN_USER_IDS or ADMIN_EMAILS (Relai ids/emails) for dispute/ops console.",
     );
   }
 });

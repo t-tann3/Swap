@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { useMarketplace } from "../../../context/MarketplaceContext";
 import { apiRequest } from "../../../lib/api";
+import { formatCompartmentSize } from "../../../lib/compartmentSizes";
 import type { Listing } from "../../../lib/types";
 
 export default function ListingDetailPage() {
@@ -54,11 +55,18 @@ export default function ListingDetailPage() {
         <span className="rounded bg-indigo-50 px-2.5 py-1 text-xs font-bold uppercase text-indigo-800">
           {listing.category}
         </span>
+        <span className="rounded bg-zinc-100 px-2.5 py-1 text-xs font-bold uppercase text-zinc-700">
+          {formatCompartmentSize(listing.compartmentSize)}
+        </span>
         <span className="text-sm capitalize text-zinc-500">
           {listing.condition.replace("_", " ")} · {listing.status}
         </span>
       </div>
       <p className="mt-4 text-zinc-700 leading-relaxed">{listing.description}</p>
+      <p className="mt-2 text-sm text-zinc-500">
+        Fits a Relai Exchange Zone {listing.compartmentSize} compartment — items
+        larger than a Full Tower door cannot be listed.
+      </p>
       <p className="mt-3 text-sm text-zinc-500">
         Seller: {listing.sellerName ?? listing.sellerEmail ?? "Seller"}
       </p>

@@ -1,15 +1,21 @@
 import { Router } from "express";
 import { z } from "zod";
 
+import { isAdminAllowlisted, syncAdminRoleForUser } from "../adminAuth.js";
 import { requireAuth } from "../auth.js";
 import { LISTING_CATEGORIES } from "../categories.js";
+import { COMPARTMENT_SIZES } from "../compartmentSizes.js";
 import { getDb, mutateDb, newId, resetDb } from "../db.js";
 import {
+  deadlineFromNow,
   ensurePickupVerifiedFromRelai,
   finalizeOrderEscrow,
   refundOrderEscrow,
   resolvePickupDeadline,
+  sellerAcceptHours,
+  sellerDropOffHours,
   sweepBuyerNoShows,
+  sweepSellerTimeouts,
 } from "../escrow.js";
 import {
   assertAuthorizedPayment,
@@ -18,7 +24,7 @@ import {
 } from "../payments.js";
 import { SEED_SELLER_USER_ID } from "../seed.js";
 import { paymentsEnabled } from "../stripe.js";
-import type { Listing, Order, Profile } from "../types.js";
+import type { Listing, MarketplaceRole, Order, Profile } from "../types.js";
 
 export const marketplaceRouter = Router();
 
@@ -55,6 +61,7 @@ function adoptSeedSellerAssets(
   }
 }
 
+/** Self-serve roles only — `admin` is never accepted from the client. */
 const rolesSchema = z.object({
   roles: z.array(z.enum(["buyer", "seller"])).min(1),
   bio: z.string().max(280).optional(),
@@ -65,6 +72,7 @@ const listingSchema = z.object({
   description: z.string().trim().min(1).max(2000),
   priceCents: z.number().int().min(0).max(100_000_000),
   category: z.enum(LISTING_CATEGORIES),
+  compartmentSize: z.enum(["S", "M", "L"]),
   condition: z
     .enum(["new", "like_new", "good", "fair"])
     .default("good"),
@@ -75,9 +83,23 @@ marketplaceRouter.get("/categories", (_req, res) => {
   res.json({ data: [...LISTING_CATEGORIES] });
 });
 
+/** Exchange Zone Full Tower compartment sizes every listing must fit. */
+marketplaceRouter.get("/compartment-sizes", (_req, res) => {
+  res.json({
+    data: COMPARTMENT_SIZES,
+    tower: {
+      name: "Full Tower",
+      doors: 18,
+      exteriorIn: { height: 76, width: 37.5, depth: 23 },
+      note: "All Swap items must fit a Relai Exchange Zone compartment.",
+    },
+  });
+});
+
 marketplaceRouter.get("/listings", (req, res) => {
   const q = String(req.query.q ?? "").trim().toLowerCase();
   const category = String(req.query.category ?? "").trim();
+  const compartmentSize = String(req.query.compartmentSize ?? "").trim();
   const status = String(req.query.status ?? "available").trim();
   const sellerUserId = String(req.query.sellerUserId ?? "").trim();
 
@@ -87,6 +109,9 @@ marketplaceRouter.get("/listings", (req, res) => {
   }
   if (category) {
     items = items.filter(l => l.category.toLowerCase() === category.toLowerCase());
+  }
+  if (compartmentSize) {
+    items = items.filter(l => l.compartmentSize === compartmentSize);
   }
   if (sellerUserId) {
     items = items.filter(l => l.sellerUserId === sellerUserId);
@@ -112,24 +137,9 @@ marketplaceRouter.get("/listings/:id", (req, res) => {
   res.json(listing);
 });
 
-marketplaceRouter.get("/me/profile", requireAuth, (req, res) => {
-  const user = req.user!;
-  const existing = getDb().profiles.find(p => p.userId === user.userId);
-  if (!existing) {
-    res.json({
-      userId: user.userId,
-      email: user.email,
-      name: user.name,
-      roles: [],
-      bio: "",
-      stripeAccountId: null,
-      stripePayoutsReady: false,
-      createdAt: null,
-      updatedAt: null,
-    });
-    return;
-  }
-  res.json(existing);
+marketplaceRouter.get("/me/profile", requireAuth, async (req, res) => {
+  const profile = await syncAdminRoleForUser(req.user!);
+  res.json(profile);
 });
 
 marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
@@ -140,6 +150,12 @@ marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
   }
   const user = req.user!;
   const ts = new Date().toISOString();
+  const selfServeRoles = [...new Set(parsed.data.roles)] as MarketplaceRole[];
+  // Preserve/grant admin from allowlist only — never from request body.
+  if (isAdminAllowlisted(user)) {
+    selfServeRoles.push("admin");
+  }
+  const roles = [...new Set(selfServeRoles)];
   let profile: Profile | undefined;
 
   await mutateDb(db => {
@@ -150,7 +166,7 @@ marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
         ...current,
         email: user.email,
         name: user.name,
-        roles: [...new Set(parsed.data.roles)],
+        roles,
         bio: parsed.data.bio ?? current.bio,
         updatedAt: ts,
       };
@@ -160,7 +176,7 @@ marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
         userId: user.userId,
         email: user.email,
         name: user.name,
-        roles: [...new Set(parsed.data.roles)],
+        roles,
         bio: parsed.data.bio ?? "",
         stripeAccountId: null,
         stripePayoutsReady: false,
@@ -201,6 +217,7 @@ marketplaceRouter.post("/listings", requireAuth, async (req, res) => {
     description: parsed.data.description,
     priceCents: parsed.data.priceCents,
     category: parsed.data.category,
+    compartmentSize: parsed.data.compartmentSize,
     condition: parsed.data.condition,
     locationLabel: parsed.data.locationLabel,
     status: "available",
@@ -360,17 +377,26 @@ marketplaceRouter.post("/listings/:id/buy", requireAuth, async (req, res) => {
         exchangeZoneId: parsedCheckout.data.exchangeZoneId,
         exchangeZoneName: parsedCheckout.data.exchangeZoneName,
         exchangeZoneAddress: parsedCheckout.data.exchangeZoneAddress ?? null,
+        compartmentSize: listing.compartmentSize,
         relaiOrderId: null,
         pickupLinkCode: null,
         pickupLinkExpiresAt: null,
+        sellerAcceptDeadlineAt: deadlineFromNow(sellerAcceptHours(), ts),
+        sellerDropOffDeadlineAt: null,
         relaiPickupVerifiedAt: null,
         relaiWebhookEventId: null,
         pickupVerifiedVia: null,
         stripePaymentIntentId: paymentIntentId,
         stripeTransferId: null,
         stripeRefundId: null,
+        transferLastError: null,
         paymentStatus: paymentIntentId ? "authorized" : "none",
+        paymentStatusBeforeDispute: null,
+        stripeDisputeId: null,
+        disputeStatus: null,
+        adminHold: false,
         completedReason: null,
+        cancelledReason: null,
         createdAt: ts,
         updatedAt: ts,
         completedAt: null,
@@ -481,8 +507,10 @@ marketplaceRouter.post("/orders/:id/accept", requireAuth, async (req, res) => {
   await mutateDb(db => {
     order = db.orders.find(o => o.id === req.params.id)!;
     adoptSeedSellerAssets(db, order, user);
+    const ts = new Date().toISOString();
     order.status = "accepted";
-    order.updatedAt = new Date().toISOString();
+    order.sellerDropOffDeadlineAt = deadlineFromNow(sellerDropOffHours(), ts);
+    order.updatedAt = ts;
   });
   res.json(order);
 });
@@ -548,8 +576,9 @@ marketplaceRouter.post("/orders/:id/drop-off", requireAuth, async (req, res) => 
 
 marketplaceRouter.post("/orders/:id/complete", requireAuth, async (req, res) => {
   const user = req.user!;
-  // Opportunistic sweep so UI stays consistent without waiting for the timer.
+  // Opportunistic sweeps so UI stays consistent without waiting for the timer.
   await sweepBuyerNoShows().catch(() => undefined);
+  await sweepSellerTimeouts().catch(() => undefined);
 
   const existing = getDb().orders.find(o => o.id === req.params.id);
   if (!existing) {
@@ -652,6 +681,7 @@ marketplaceRouter.post("/orders/:id/cancel", requireAuth, async (req, res) => {
     order = db.orders.find(o => o.id === req.params.id)!;
     const ts = new Date().toISOString();
     order.status = "cancelled";
+    order.cancelledReason = "buyer_or_seller_cancel";
     order.paymentStatus =
       order.paymentStatus === "authorized" ? "cancelled" : order.paymentStatus;
     order.updatedAt = ts;
@@ -686,7 +716,7 @@ marketplaceRouter.post("/orders/:id/refund", requireAuth, async (req, res) => {
   }
 
   try {
-    const order = await refundOrderEscrow(existing.id);
+    const order = await refundOrderEscrow(existing.id, "post_dropoff_refund");
     res.json({
       ...order,
       listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
@@ -748,6 +778,7 @@ marketplaceRouter.delete("/favorites/:listingId", requireAuth, async (req, res) 
   res.json({ ok: true });
 });
 
+/** @deprecated Prefer POST /api/admin/reseed with x-admin-key. */
 marketplaceRouter.post("/admin/reseed", async (_req, res) => {
   if (process.env.ALLOW_RESEED !== "true") {
     res.status(403).json({ code: "forbidden", message: "Reseed disabled." });
@@ -757,7 +788,7 @@ marketplaceRouter.post("/admin/reseed", async (_req, res) => {
   res.json({ ok: true, listings: db.listings.length });
 });
 
-/** Clear orders/favorites/profiles; keep listings (reset reserved → available). */
+/** @deprecated Prefer POST /api/admin/clear-except-listings with x-admin-key. */
 marketplaceRouter.post("/admin/clear-except-listings", async (_req, res) => {
   if (process.env.ALLOW_RESEED !== "true") {
     res.status(403).json({ code: "forbidden", message: "Clear disabled." });
