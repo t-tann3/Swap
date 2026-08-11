@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { useMarketplace } from "../../context/MarketplaceContext";
+import { mediaUrl } from "../../lib/media";
 import type { Order } from "../../lib/types";
 
 type StatusBucket = "placed" | "accepted" | "ready_for_pickup" | "completed";
@@ -202,7 +203,7 @@ export default function OrdersPage() {
               </p>
               {item.exchangeZoneName ? (
                 <p className="mt-1 text-sm text-zinc-500">
-                  Drop-off zone: {item.exchangeZoneName}
+                  Exchange Zone: {item.exchangeZoneName}
                   {item.exchangeZoneAddress
                     ? ` · ${item.exchangeZoneAddress}`
                     : ""}
@@ -225,6 +226,21 @@ export default function OrdersPage() {
                   <p className="mt-1 break-all font-mono text-xs font-semibold">
                     {item.pickupLinkCode}
                   </p>
+                </div>
+              ) : null}
+              {item.dropOffPhotoUrl &&
+              (item.status === "ready_for_pickup" ||
+                item.status === "completed") ? (
+                <div className="mt-3">
+                  <p className="text-[11px] font-bold uppercase text-zinc-500">
+                    Compartment photo
+                  </p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={mediaUrl(item.dropOffPhotoUrl)!}
+                    alt="Item in compartment"
+                    className="mt-2 h-40 w-full rounded-lg object-cover"
+                  />
                 </div>
               ) : null}
               <div className="mt-3 flex flex-wrap gap-2">

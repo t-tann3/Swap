@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,9 +11,9 @@ import {
 } from "react-native";
 
 import { apiRequest } from "../api/client";
-import { formatCompartmentSize } from "../marketplace/compartmentSizes";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { Listing } from "../marketplace/types";
+import { mediaUrl } from "../media/photos";
 
 type Props = {
   route: { params: { id: string } };
@@ -102,7 +103,14 @@ export function ListingDetailScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={[styles.hero, { backgroundColor: listing.imageColor }]} />
+      {mediaUrl(listing.imageUrl) ? (
+        <Image
+          source={{ uri: mediaUrl(listing.imageUrl)! }}
+          style={styles.hero}
+        />
+      ) : (
+        <View style={[styles.hero, { backgroundColor: listing.imageColor }]} />
+      )}
       <Text style={styles.title}>{listing.title}</Text>
       {showPrices ? (
         <Text style={styles.price}>
@@ -111,16 +119,13 @@ export function ListingDetailScreen({ route, navigation }: Props) {
       ) : null}
       <View style={styles.tagRow}>
         <Text style={styles.categoryTag}>{listing.category}</Text>
-        <Text style={styles.sizeTag}>
-          {formatCompartmentSize(listing.compartmentSize)}
-        </Text>
         <Text style={styles.meta}>
           {listing.condition.replace("_", " ")} · {listing.status}
         </Text>
       </View>
       <Text style={styles.body}>{listing.description}</Text>
       <Text style={styles.meta}>
-        Must fit: {formatCompartmentSize(listing.compartmentSize)}.
+        Must fit a Relai Exchange Zone compartment. All doors are the same size.
       </Text>
       <Text style={styles.meta}>Pickup area: {listing.locationLabel}</Text>
       <Text style={styles.meta}>
@@ -197,16 +202,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     textTransform: "uppercase",
     letterSpacing: 0.3,
-  },
-  sizeTag: {
-    backgroundColor: "#f3f4f6",
-    color: "#374151",
-    fontSize: 12,
-    fontWeight: "700",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    overflow: "hidden",
   },
   meta: {
     fontSize: 13,

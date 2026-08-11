@@ -96,7 +96,7 @@ function PaymentStep({
           : `Pay & place order · $${(listing.priceCents / 100).toFixed(2)}`}
       </button>
       <p className="text-xs text-zinc-500">
-        Drop-off zone: {selected.name}
+        Exchange Zone: {selected.name}
         {selected.address ? ` · ${selected.address}` : ""}
       </p>
     </div>
@@ -238,7 +238,7 @@ export default function CheckoutPage() {
       ) : null}
 
       <h2 className="mt-8 text-lg font-semibold">
-        Choose Exchange Zone for drop-off
+        Choose Exchange Zone
       </h2>
       <p className="mt-1 text-sm text-zinc-600">
         Open state comes from Relai (`is_open_now`), not your browser clock.

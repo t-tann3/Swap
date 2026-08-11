@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { useMarketplace } from "../context/MarketplaceContext";
+import { mediaUrl } from "../lib/media";
 import type { Listing } from "../lib/types";
 
 export function ListingCard({
@@ -13,16 +14,26 @@ export function ListingCard({
   href: string;
 }) {
   const { showPrices } = useMarketplace();
+  const photo = mediaUrl(item.imageUrl);
 
   return (
     <Link
       href={href}
       className="flex gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-zinc-100 transition hover:ring-zinc-300"
     >
-      <div
-        className="h-16 w-16 shrink-0 rounded-lg"
-        style={{ backgroundColor: item.imageColor }}
-      />
+      {photo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={photo}
+          alt=""
+          className="h-16 w-16 shrink-0 rounded-lg object-cover"
+        />
+      ) : (
+        <div
+          className="h-16 w-16 shrink-0 rounded-lg"
+          style={{ backgroundColor: item.imageColor }}
+        />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <h3 className="truncate font-semibold">{item.title}</h3>
@@ -35,15 +46,6 @@ export function ListingCard({
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-indigo-800">
             {item.category}
-          </span>
-          <span className="rounded bg-zinc-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-zinc-700">
-            {item.compartmentSize === "S"
-              ? "Small · backpack"
-              : item.compartmentSize === "M"
-                ? "Medium · 1 carry-on"
-                : item.compartmentSize === "L"
-                  ? "Large · 2 carry-ons"
-                  : "Size ?"}
           </span>
           <span className="text-xs text-zinc-500 capitalize">
             {item.condition.replace("_", " ")}

@@ -78,15 +78,12 @@ export interface Listing {
   description: string;
   priceCents: number;
   category: string;
-  /**
-   * Relai Exchange Zone compartment size the item fits (S/M/L).
-   * Required — Swap only lists items that fit a Full Tower door.
-   */
-  compartmentSize: "S" | "M" | "L";
   condition: "new" | "like_new" | "good" | "fair";
   locationLabel: string;
   status: ListingStatus;
   imageColor: string;
+  /** Optional listing photo (`/uploads/…`). */
+  imageUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -102,8 +99,8 @@ export interface Order {
   exchangeZoneId: string;
   exchangeZoneName: string;
   exchangeZoneAddress: string | null;
-  /** Snapshot of listing compartment size for Relai unlock on drop-off. */
-  compartmentSize: "S" | "M" | "L";
+  /** Photo of the item in the compartment after drop-off (`/uploads/…`). */
+  dropOffPhotoUrl: string | null;
   /** Relai Access order created when the seller drops off. */
   relaiOrderId: string | null;
   /** Open-handoff pick-up link from the Relai drop-off open. */

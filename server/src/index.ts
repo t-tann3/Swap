@@ -16,8 +16,10 @@ import {
   stripeWebhookRouter,
   stripeWebhooksConfigured,
 } from "./routes/stripeWebhook.js";
+import { uploadsRouter } from "./routes/uploads.js";
 import { relaiServerApiConfigured } from "./relai.js";
 import { paymentsEnabled } from "./stripe.js";
+import { ensureUploadsDir, uploadsDir } from "./uploads.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -36,7 +38,10 @@ app.use(
   relaiWebhookRouter,
 );
 
-app.use(express.json());
+// Base64 photo uploads can be large; keep under ~3MB encoded.
+app.use(express.json({ limit: "4mb" }));
+app.use("/uploads", express.static(uploadsDir));
+app.use("/api/uploads", uploadsRouter);
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -54,6 +59,7 @@ app.use("/api", marketplaceRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/admin", adminRouter);
 
+await ensureUploadsDir();
 await initDb();
 startEscrowScheduler();
 

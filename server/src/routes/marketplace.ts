@@ -4,8 +4,7 @@ import { z } from "zod";
 import { isAdminAllowlisted, syncAdminRoleForUser } from "../adminAuth.js";
 import { requireAuth } from "../auth.js";
 import { LISTING_CATEGORIES } from "../categories.js";
-import { COMPARTMENT_SIZES } from "../compartmentSizes.js";
-import { getDb, mutateDb, newId, resetDb } from "../db.js";
+import { getDb, mutateDb, newId, refreshDb, resetDb } from "../db.js";
 import {
   deadlineFromNow,
   ensurePickupVerifiedFromRelai,
@@ -16,6 +15,7 @@ import {
   sellerDropOffHours,
   sweepBuyerNoShows,
   sweepSellerTimeouts,
+  voidPreDropoffEscrow,
 } from "../escrow.js";
 import {
   assertAuthorizedPayment,
@@ -25,6 +25,7 @@ import {
 import { SEED_SELLER_USER_ID } from "../seed.js";
 import { paymentsEnabled } from "../stripe.js";
 import type { Listing, MarketplaceRole, Order, Profile } from "../types.js";
+import { isOwnedUploadUrl } from "../uploads.js";
 
 export const marketplaceRouter = Router();
 
@@ -72,34 +73,26 @@ const listingSchema = z.object({
   description: z.string().trim().min(1).max(2000),
   priceCents: z.number().int().min(0).max(100_000_000),
   category: z.enum(LISTING_CATEGORIES),
-  compartmentSize: z.enum(["S", "M", "L"]),
   condition: z
     .enum(["new", "like_new", "good", "fair"])
     .default("good"),
   locationLabel: z.string().trim().max(120).default("Local Exchange Zone"),
+  imageUrl: z
+    .string()
+    .nullable()
+    .optional()
+    .refine(v => v == null || isOwnedUploadUrl(v), {
+      message: "imageUrl must be a Swap upload path (/uploads/…).",
+    }),
 });
 
 marketplaceRouter.get("/categories", (_req, res) => {
   res.json({ data: [...LISTING_CATEGORIES] });
 });
 
-/** Exchange Zone Full Tower compartment sizes every listing must fit. */
-marketplaceRouter.get("/compartment-sizes", (_req, res) => {
-  res.json({
-    data: COMPARTMENT_SIZES,
-    tower: {
-      name: "Full Tower",
-      doors: 18,
-      exteriorIn: { height: 76, width: 37.5, depth: 23 },
-      note: "All Swap items must fit a Relai Exchange Zone compartment.",
-    },
-  });
-});
-
 marketplaceRouter.get("/listings", (req, res) => {
   const q = String(req.query.q ?? "").trim().toLowerCase();
   const category = String(req.query.category ?? "").trim();
-  const compartmentSize = String(req.query.compartmentSize ?? "").trim();
   const status = String(req.query.status ?? "available").trim();
   const sellerUserId = String(req.query.sellerUserId ?? "").trim();
 
@@ -109,9 +102,6 @@ marketplaceRouter.get("/listings", (req, res) => {
   }
   if (category) {
     items = items.filter(l => l.category.toLowerCase() === category.toLowerCase());
-  }
-  if (compartmentSize) {
-    items = items.filter(l => l.compartmentSize === compartmentSize);
   }
   if (sellerUserId) {
     items = items.filter(l => l.sellerUserId === sellerUserId);
@@ -217,11 +207,11 @@ marketplaceRouter.post("/listings", requireAuth, async (req, res) => {
     description: parsed.data.description,
     priceCents: parsed.data.priceCents,
     category: parsed.data.category,
-    compartmentSize: parsed.data.compartmentSize,
     condition: parsed.data.condition,
     locationLabel: parsed.data.locationLabel,
     status: "available",
     imageColor: "#4B5563",
+    imageUrl: parsed.data.imageUrl ?? null,
     createdAt: ts,
     updatedAt: ts,
   };
@@ -377,7 +367,7 @@ marketplaceRouter.post("/listings/:id/buy", requireAuth, async (req, res) => {
         exchangeZoneId: parsedCheckout.data.exchangeZoneId,
         exchangeZoneName: parsedCheckout.data.exchangeZoneName,
         exchangeZoneAddress: parsedCheckout.data.exchangeZoneAddress ?? null,
-        compartmentSize: listing.compartmentSize,
+        dropOffPhotoUrl: null,
         relaiOrderId: null,
         pickupLinkCode: null,
         pickupLinkExpiresAt: null,
@@ -435,6 +425,7 @@ marketplaceRouter.post("/listings/:id/buy", requireAuth, async (req, res) => {
 
 marketplaceRouter.get("/orders", requireAuth, async (req, res) => {
   await sweepBuyerNoShows().catch(() => undefined);
+  await refreshDb();
   const user = req.user!;
   const role = String(req.query.as ?? "buyer");
   const orders = getDb().orders.filter(o =>
@@ -447,7 +438,8 @@ marketplaceRouter.get("/orders", requireAuth, async (req, res) => {
   res.json({ data: enriched });
 });
 
-marketplaceRouter.get("/orders/:id", requireAuth, (req, res) => {
+marketplaceRouter.get("/orders/:id", requireAuth, async (req, res) => {
+  await refreshDb();
   const user = req.user!;
   const order = getDb().orders.find(o => o.id === req.params.id);
   if (!order) {
@@ -521,6 +513,13 @@ marketplaceRouter.post("/orders/:id/drop-off", requireAuth, async (req, res) => 
     relaiOrderId: z.string().min(1),
     pickupLinkCode: z.string().min(1),
     pickupLinkExpiresAt: z.string().nullable().optional(),
+    dropOffPhotoUrl: z
+      .string()
+      .nullable()
+      .optional()
+      .refine(v => v == null || v === "" || isOwnedUploadUrl(v), {
+        message: "dropOffPhotoUrl must be a Swap upload path (/uploads/…).",
+      }),
   });
   const parsed = bodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -569,6 +568,7 @@ marketplaceRouter.post("/orders/:id/drop-off", requireAuth, async (req, res) => 
       parsed.data.pickupLinkExpiresAt,
       ts,
     );
+    order.dropOffPhotoUrl = parsed.data.dropOffPhotoUrl || null;
     order.updatedAt = ts;
   });
   res.json(order);
@@ -645,7 +645,8 @@ marketplaceRouter.post("/orders/:id/complete", requireAuth, async (req, res) => 
 
 marketplaceRouter.post("/orders/:id/cancel", requireAuth, async (req, res) => {
   const user = req.user!;
-  const existing = getDb().orders.find(o => o.id === req.params.id);
+  const orderId = String(req.params.id ?? "");
+  const existing = getDb().orders.find(o => o.id === orderId);
   if (!existing) {
     res.status(404).json({ code: "not_found", message: "Order not found." });
     return;
@@ -654,44 +655,63 @@ marketplaceRouter.post("/orders/:id/cancel", requireAuth, async (req, res) => {
     res.status(403).json({ code: "forbidden", message: "Not your order." });
     return;
   }
-  if (
-    existing.status !== "pending_accept" &&
-    existing.status !== "accepted"
-  ) {
+
+  // Pre–drop-off: void auth and cancel. After drop-off (ready for pickup):
+  // refund escrow. Completed orders stay non-cancellable.
+  try {
+    if (
+      existing.status === "pending_accept" ||
+      existing.status === "accepted"
+    ) {
+      const order = await voidPreDropoffEscrow(
+        existing.id,
+        "buyer_or_seller_cancel",
+      );
+      res.json({
+        ...order,
+        listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
+      });
+      return;
+    }
+
+    if (existing.status === "ready_for_pickup") {
+      const order = await refundOrderEscrow(
+        existing.id,
+        "post_dropoff_refund",
+      );
+      res.json({
+        ...order,
+        listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
+      });
+      return;
+    }
+
     res.status(409).json({
       code: "invalid_status",
       message:
-        "After drop-off, use Cancel & refund instead of cancel. Completed orders cannot be cancelled.",
+        existing.status === "completed"
+          ? "Completed orders cannot be cancelled."
+          : existing.status === "cancelled"
+            ? "This order is already cancelled."
+            : `This order cannot be cancelled (status: ${existing.status}).`,
     });
-    return;
-  }
-
-  try {
-    await cancelAuthorizedPayment(existing.stripePaymentIntentId);
-  } catch {
-    res.status(502).json({
-      code: "payment_cancel_failed",
-      message: "Could not release the authorized payment. Try again.",
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    const code = (err as Error).message;
+    res.status(status).json({
+      code,
+      message:
+        code === "payment_cancel_failed" || code === "payment_refund_failed"
+          ? "Could not release the payment. Try again."
+          : code === "payment_disputed"
+            ? "This payment is under dispute and cannot be cancelled here."
+            : code === "escrow_busy"
+              ? "Escrow is busy. Try again in a moment."
+              : code === "invalid_status"
+                ? "This order can no longer be cancelled."
+                : "Could not cancel this order.",
     });
-    return;
   }
-
-  let order: Order | undefined;
-  await mutateDb(db => {
-    order = db.orders.find(o => o.id === req.params.id)!;
-    const ts = new Date().toISOString();
-    order.status = "cancelled";
-    order.cancelledReason = "buyer_or_seller_cancel";
-    order.paymentStatus =
-      order.paymentStatus === "authorized" ? "cancelled" : order.paymentStatus;
-    order.updatedAt = ts;
-    const listing = db.listings.find(l => l.id === order!.listingId);
-    if (listing && listing.status === "reserved") {
-      listing.status = "available";
-      listing.updatedAt = ts;
-    }
-  });
-  res.json(order);
 });
 
 /** Post-drop-off: void/refund buyer funds and cancel the marketplace order. */

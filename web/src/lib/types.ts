@@ -39,12 +39,11 @@ export interface Listing {
   description: string;
   priceCents: number;
   category: string;
-  /** Relai Exchange Zone compartment size (S/M/L). Required. */
-  compartmentSize: "S" | "M" | "L";
   condition: ItemCondition;
   locationLabel: string;
   status: string;
   imageColor: string;
+  imageUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,7 +58,7 @@ export interface Order {
   exchangeZoneId: string;
   exchangeZoneName: string;
   exchangeZoneAddress: string | null;
-  compartmentSize?: "S" | "M" | "L";
+  dropOffPhotoUrl?: string | null;
   relaiOrderId: string | null;
   pickupLinkCode: string | null;
   pickupLinkExpiresAt: string | null;
@@ -89,9 +88,9 @@ export interface CreateListingInput {
   description: string;
   priceCents: number;
   category: string;
-  compartmentSize: "S" | "M" | "L";
   condition?: ItemCondition;
   locationLabel?: string;
+  imageUrl?: string | null;
 }
 
 export interface CheckoutExchangeZone {
@@ -105,4 +104,5 @@ export interface DropOffPayload {
   relaiOrderId: string;
   pickupLinkCode: string;
   pickupLinkExpiresAt: string | null;
+  dropOffPhotoUrl?: string | null;
 }

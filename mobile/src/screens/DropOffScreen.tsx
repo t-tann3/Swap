@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -12,7 +14,9 @@ import {
 import { apiRequest } from "../api/client";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { Order } from "../marketplace/types";
+import { mediaUrl, pickAndUploadPhoto } from "../media/photos";
 import { getRelai } from "../relai/client";
+import { resolveAvailableCompartment } from "../relai/compartment";
 import { createSandboxTransport } from "../relai/transport";
 
 type Props = {
@@ -37,6 +41,13 @@ function describeDropOffError(err: unknown): string {
         "opens are not payment-gated, then try drop-off again."
       );
     }
+    if (err.code === "no_node_available") {
+      return (
+        "Relai has no matching free compartment at this Exchange Zone. " +
+        "Sandbox doors are usually labeled “standard”. Try again, or place a " +
+        "new order at a zone that shows compartments available at checkout."
+      );
+    }
     return `[${err.code}] ${err.message}`;
   }
   return err instanceof Error ? err.message : "Drop-off failed";
@@ -47,6 +58,8 @@ export function DropOffScreen({ route, navigation }: Props) {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [dropOffPhotoUrl, setDropOffPhotoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,14 +84,29 @@ export function DropOffScreen({ route, navigation }: Props) {
     };
   }, [route.params.orderId]);
 
+  async function onSnapCompartment(source: "camera" | "library" = "camera") {
+    setPhotoBusy(true);
+    setError(null);
+    try {
+      const url = await pickAndUploadPhoto(source);
+      if (url) setDropOffPhotoUrl(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Photo failed");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
   async function onDropOff() {
     if (!order || busy) return;
     setBusy(true);
     setError(null);
     try {
       const relai = getRelai();
-      // Marketplace handoffs are always open-mode: drop-off mints a single-use
-      // access link that we attach to the marketplace order for the buyer.
+      const compartment = await resolveAvailableCompartment(
+        relai,
+        order.exchangeZoneId,
+      );
       const relaiOrder = await relai.orders.create({
         exchangeZoneId: order.exchangeZoneId,
         handoffMode: "open",
@@ -88,9 +116,9 @@ export function DropOffScreen({ route, navigation }: Props) {
       const result = await relai.unlock({
         orderId: relaiOrder.id,
         intent: Intents.Occupy,
-        // Open a door matching the listing's Exchange Zone size tag.
-        size: order.compartmentSize ?? order.listing?.compartmentSize ?? "M",
         transport,
+        nodeId: compartment.nodeId,
+        ...(compartment.size ? { size: compartment.size } : {}),
       });
 
       const link = result.open.access_link;
@@ -104,11 +132,14 @@ export function DropOffScreen({ route, navigation }: Props) {
         relaiOrderId: relaiOrder.id,
         pickupLinkCode: link.code,
         pickupLinkExpiresAt: link.expires_at,
+        dropOffPhotoUrl,
       });
 
       Alert.alert(
         "Dropped off",
-        "Pickup link saved on this order. The buyer can view it under Ready for Pickup and paste it to collect.",
+        dropOffPhotoUrl
+          ? "Pickup link and compartment photo saved. The buyer can view them under Ready for Pickup."
+          : "Pickup link saved. The buyer can view it under Ready for Pickup.",
         [{ text: "OK", onPress: () => navigation.goBack() }],
       );
     } catch (err) {
@@ -134,8 +165,10 @@ export function DropOffScreen({ route, navigation }: Props) {
     );
   }
 
+  const previewUri = mediaUrl(dropOffPhotoUrl);
+
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.heading}>Drop off</Text>
       <Text style={styles.title}>{order.listing?.title ?? "Order"}</Text>
       <Text style={styles.meta}>
@@ -143,19 +176,48 @@ export function DropOffScreen({ route, navigation }: Props) {
         {order.exchangeZoneAddress ? `\n${order.exchangeZoneAddress}` : ""}
       </Text>
       <Text style={styles.body}>
-        Creates a Relai open-handoff order, opens a compartment (sandbox
-        simulated transport), and attaches the one-time pickup link to this
-        marketplace order for the buyer.
+        Open a compartment and place the item inside. A compartment photo is
+        optional (useful on a real device; the simulator has no camera). Swap
+        attaches the one-time pickup link for the buyer.
       </Text>
-      <Text style={styles.hint}>
-        Requires Open handoff enabled on your Relai sandbox app in the portal.
-      </Text>
+
+      <Text style={styles.label}>Compartment photo (optional)</Text>
+      {previewUri ? (
+        <Image source={{ uri: previewUri }} style={styles.preview} />
+      ) : (
+        <View style={styles.previewEmpty}>
+          <Text style={styles.previewEmptyText}>No photo yet</Text>
+        </View>
+      )}
+      <View style={styles.photoRow}>
+        <Pressable
+          style={[
+            styles.secondary,
+            styles.photoBtn,
+            (photoBusy || busy) && styles.buttonDisabled,
+          ]}
+          disabled={photoBusy || busy || order.status !== "accepted"}
+          onPress={() => void onSnapCompartment("camera")}>
+          <Text style={styles.secondaryText}>
+            {dropOffPhotoUrl ? "Retake" : "Camera"}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.secondary,
+            styles.photoBtn,
+            (photoBusy || busy) && styles.buttonDisabled,
+          ]}
+          disabled={photoBusy || busy || order.status !== "accepted"}
+          onPress={() => void onSnapCompartment("library")}>
+          <Text style={styles.secondaryText}>Choose photo</Text>
+        </Pressable>
+      </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-
       <Pressable
         style={[styles.button, busy && styles.buttonDisabled]}
-        disabled={busy || order.status !== "accepted"}
+        disabled={busy || photoBusy || order.status !== "accepted"}
         onPress={() => void onDropOff()}>
         {busy ? (
           <ActivityIndicator color="#fff" />
@@ -163,7 +225,7 @@ export function DropOffScreen({ route, navigation }: Props) {
           <Text style={styles.buttonText}>Open compartment & drop off</Text>
         )}
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -171,7 +233,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f4f5f7",
+  },
+  content: {
     padding: 24,
+    paddingBottom: 40,
   },
   center: {
     flex: 1,
@@ -200,18 +265,60 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#414651",
     lineHeight: 22,
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  hint: {
-    fontSize: 13,
-    color: "#5c6370",
-    lineHeight: 18,
-    marginBottom: 20,
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 8,
+    color: "#111827",
+  },
+  preview: {
+    width: "100%",
+    height: 200,
+    borderRadius: 12,
+    marginBottom: 10,
+    backgroundColor: "#e5e7eb",
+  },
+  previewEmpty: {
+    width: "100%",
+    height: 140,
+    borderRadius: 12,
+    marginBottom: 10,
+    backgroundColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  previewEmptyText: {
+    color: "#6b7280",
+    fontSize: 14,
+  },
+  secondary: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    marginBottom: 16,
+  },
+  photoRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+  },
+  photoBtn: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  secondaryText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#111827",
   },
   error: {
     color: "#b42318",
     marginBottom: 12,
-    lineHeight: 20,
   },
   button: {
     backgroundColor: "#111827",

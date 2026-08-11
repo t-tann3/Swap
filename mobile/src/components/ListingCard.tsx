@@ -1,7 +1,8 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { Listing } from "../marketplace/types";
+import { mediaUrl } from "../media/photos";
 
 function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -17,10 +18,15 @@ export function ListingCard({
   rightLabel?: string;
 }) {
   const { showPrices } = useMarketplace();
+  const photo = mediaUrl(item.imageUrl);
 
   return (
     <Pressable style={styles.row} onPress={onPress}>
-      <View style={[styles.swatch, { backgroundColor: item.imageColor }]} />
+      {photo ? (
+        <Image source={{ uri: photo }} style={styles.swatch} />
+      ) : (
+        <View style={[styles.swatch, { backgroundColor: item.imageColor }]} />
+      )}
       <View style={styles.body}>
         <View style={styles.rowTop}>
           <Text style={styles.title} numberOfLines={1}>
@@ -32,15 +38,6 @@ export function ListingCard({
         </View>
         <View style={styles.tagRow}>
           <Text style={styles.categoryTag}>{item.category}</Text>
-          <Text style={styles.sizeTag}>
-            {item.compartmentSize === "S"
-              ? "Small · backpack"
-              : item.compartmentSize === "M"
-                ? "Medium · 1 carry-on"
-                : item.compartmentSize === "L"
-                  ? "Large · 2 carry-ons"
-                  : "Size ?"}
-          </Text>
           <Text style={styles.meta}>
             {item.condition.replace("_", " ")}
             {rightLabel ? ` · ${rightLabel}` : ""}
@@ -97,18 +94,6 @@ const styles = StyleSheet.create({
   categoryTag: {
     backgroundColor: "#eef2ff",
     color: "#3730a3",
-    fontSize: 11,
-    fontWeight: "700",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  sizeTag: {
-    backgroundColor: "#f3f4f6",
-    color: "#374151",
     fontSize: 11,
     fontWeight: "700",
     paddingHorizontal: 8,

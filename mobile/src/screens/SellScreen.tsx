@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   Alert,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -15,11 +16,8 @@ import {
   LISTING_CATEGORIES,
   type ListingCategory,
 } from "../marketplace/categories";
-import {
-  COMPARTMENT_SIZES,
-  type CompartmentSizeId,
-} from "../marketplace/compartmentSizes";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
+import { mediaUrl, pickAndUploadPhoto } from "../media/photos";
 import type { SellStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<SellStackParamList, "SellHome">;
@@ -30,9 +28,9 @@ export function SellScreen({ navigation }: Props) {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState<ListingCategory>("General");
-  const [compartmentSize, setCompartmentSize] =
-    useState<CompartmentSizeId>("M");
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   if (!profile?.roles.includes("seller")) {
     return (
@@ -43,6 +41,21 @@ export function SellScreen({ navigation }: Props) {
         </Text>
       </View>
     );
+  }
+
+  async function onPickPhoto(source: "camera" | "library") {
+    setPhotoBusy(true);
+    try {
+      const url = await pickAndUploadPhoto(source);
+      if (url) setImageUrl(url);
+    } catch (err) {
+      Alert.alert(
+        "Photo failed",
+        err instanceof Error ? err.message : "Could not upload photo",
+      );
+    } finally {
+      setPhotoBusy(false);
+    }
   }
 
   async function onPost() {
@@ -67,16 +80,16 @@ export function SellScreen({ navigation }: Props) {
         title,
         description,
         category,
-        compartmentSize,
         priceCents: Math.round(dollars * 100),
         condition: "good",
         locationLabel: "Local Exchange Zone",
+        imageUrl,
       });
       setTitle("");
       setDescription("");
       setPrice("");
       setCategory("General");
-      setCompartmentSize("M");
+      setImageUrl(null);
       Alert.alert("Posted", "Your listing is live for buyers.");
     } catch (err) {
       Alert.alert(
@@ -88,6 +101,8 @@ export function SellScreen({ navigation }: Props) {
     }
   }
 
+  const previewUri = mediaUrl(imageUrl);
+
   return (
     <FlatList
       style={styles.container}
@@ -98,9 +113,39 @@ export function SellScreen({ navigation }: Props) {
         <View style={styles.form}>
           <Text style={styles.heading}>Post an item</Text>
           <Text style={styles.help}>
-            Items must fit a Relai Exchange Zone compartment. Pick the smallest
-            size using the suitcase guide — Large is about 2 carry-ons.
+            Items must fit a Relai Exchange Zone compartment. All doors are the
+            same size. A listing photo is optional.
           </Text>
+          <Text style={styles.label}>Photo (optional)</Text>
+          {previewUri ? (
+            <Image source={{ uri: previewUri }} style={styles.preview} />
+          ) : (
+            <View style={styles.previewEmpty}>
+              <Text style={styles.previewEmptyText}>No photo yet</Text>
+            </View>
+          )}
+          <View style={styles.photoRow}>
+            <Pressable
+              style={[styles.secondary, photoBusy && styles.buttonDisabled]}
+              disabled={photoBusy || busy}
+              onPress={() => void onPickPhoto("camera")}>
+              <Text style={styles.secondaryText}>Take photo</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.secondary, photoBusy && styles.buttonDisabled]}
+              disabled={photoBusy || busy}
+              onPress={() => void onPickPhoto("library")}>
+              <Text style={styles.secondaryText}>Choose</Text>
+            </Pressable>
+            {imageUrl ? (
+              <Pressable
+                style={styles.secondary}
+                disabled={busy}
+                onPress={() => setImageUrl(null)}>
+                <Text style={styles.secondaryText}>Remove</Text>
+              </Pressable>
+            ) : null}
+          </View>
           <TextInput
             style={styles.input}
             placeholder="Title"
@@ -140,25 +185,10 @@ export function SellScreen({ navigation }: Props) {
               );
             })}
           </View>
-          <Text style={styles.label}>Compartment size</Text>
-          {COMPARTMENT_SIZES.map(size => {
-            const active = compartmentSize === size.id;
-            return (
-              <Pressable
-                key={size.id}
-                style={[styles.sizeCard, active && styles.sizeCardOn]}
-                onPress={() => setCompartmentSize(size.id)}>
-                <Text style={styles.sizeTitle}>
-                  {size.label} · {size.fitGuide}
-                </Text>
-                <Text style={styles.sizeDesc}>{size.description}</Text>
-              </Pressable>
-            );
-          })}
           <Pressable
             style={[styles.button, busy && styles.buttonDisabled]}
             onPress={onPost}
-            disabled={busy}>
+            disabled={busy || photoBusy}>
             <Text style={styles.buttonText}>Post listing</Text>
           </Pressable>
           <Text style={styles.heading}>Your listings</Text>
@@ -215,32 +245,49 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 12,
   },
-  sizeCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: "#f3f4f6",
-    padding: 12,
-    marginBottom: 8,
-  },
-  sizeCardOn: {
-    borderColor: "#111827",
-  },
-  sizeTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  sizeDesc: {
-    marginTop: 4,
-    fontSize: 12,
-    color: "#5c6370",
-    lineHeight: 16,
-  },
   label: {
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 8,
+    color: "#111827",
+  },
+  preview: {
+    width: "100%",
+    height: 180,
+    borderRadius: 12,
+    marginBottom: 10,
+    backgroundColor: "#e5e7eb",
+  },
+  previewEmpty: {
+    width: "100%",
+    height: 120,
+    borderRadius: 12,
+    marginBottom: 10,
+    backgroundColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  previewEmptyText: {
+    color: "#6b7280",
+    fontSize: 14,
+  },
+  photoRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 14,
+  },
+  secondary: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  secondaryText: {
+    fontSize: 14,
+    fontWeight: "600",
     color: "#111827",
   },
   categoryRow: {

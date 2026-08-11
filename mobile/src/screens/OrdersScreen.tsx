@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import {
   Alert,
   FlatList,
+  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -13,6 +14,7 @@ import { useFocusEffect } from "@react-navigation/native";
 
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { Order } from "../marketplace/types";
+import { mediaUrl } from "../media/photos";
 import type { OrdersStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<OrdersStackParamList, "OrdersHome">;
@@ -256,7 +258,7 @@ export function OrdersScreen({ navigation }: Props) {
               </Text>
               {item.exchangeZoneName ? (
                 <Text style={styles.meta}>
-                  Drop-off zone: {item.exchangeZoneName}
+                  Exchange Zone: {item.exchangeZoneName}
                   {item.exchangeZoneAddress
                     ? ` · ${item.exchangeZoneAddress}`
                     : ""}
@@ -282,6 +284,18 @@ export function OrdersScreen({ navigation }: Props) {
                       Long-press to copy, then open Pick up and paste if needed.
                     </Text>
                   ) : null}
+                </View>
+              ) : null}
+
+              {item.dropOffPhotoUrl &&
+              (item.status === "ready_for_pickup" ||
+                item.status === "completed") ? (
+                <View style={styles.photoBox}>
+                  <Text style={styles.linkLabel}>Compartment photo</Text>
+                  <Image
+                    source={{ uri: mediaUrl(item.dropOffPhotoUrl)! }}
+                    style={styles.dropOffPhoto}
+                  />
                 </View>
               ) : null}
 
@@ -432,6 +446,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#f3f4f6",
     borderRadius: 8,
     padding: 10,
+  },
+  photoBox: {
+    marginTop: 10,
+  },
+  dropOffPhoto: {
+    width: "100%",
+    height: 160,
+    borderRadius: 8,
+    backgroundColor: "#e5e7eb",
   },
   linkLabel: {
     fontSize: 11,

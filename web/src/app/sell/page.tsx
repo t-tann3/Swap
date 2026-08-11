@@ -4,14 +4,12 @@ import { useState, type FormEvent } from "react";
 
 import { ListingCard } from "../../components/ListingCard";
 import { useMarketplace } from "../../context/MarketplaceContext";
+import { apiRequest } from "../../lib/api";
 import {
   LISTING_CATEGORIES,
   type ListingCategory,
 } from "../../lib/categories";
-import {
-  COMPARTMENT_SIZES,
-  type CompartmentSizeId,
-} from "../../lib/compartmentSizes";
+import { fileToBase64, mediaUrl } from "../../lib/media";
 
 export default function SellPage() {
   const { profile, myListings, createListing, showPrices } = useMarketplace();
@@ -19,9 +17,9 @@ export default function SellPage() {
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState<ListingCategory>("General");
-  const [compartmentSize, setCompartmentSize] =
-    useState<CompartmentSizeId>("M");
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   if (!profile?.roles.includes("seller")) {
@@ -33,6 +31,25 @@ export default function SellPage() {
         </p>
       </div>
     );
+  }
+
+  async function onFileChange(file: File | null) {
+    if (!file) return;
+    setPhotoBusy(true);
+    setMessage(null);
+    try {
+      const { imageBase64, mimeType } = await fileToBase64(file);
+      const res = await apiRequest<{ url: string }>("/api/uploads", {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify({ imageBase64, mimeType }),
+      });
+      setImageUrl(res.url);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Photo upload failed");
+    } finally {
+      setPhotoBusy(false);
+    }
   }
 
   async function onSubmit(e: FormEvent) {
@@ -57,16 +74,16 @@ export default function SellPage() {
         title,
         description,
         category,
-        compartmentSize,
         priceCents: Math.round(dollars * 100),
         condition: "good",
         locationLabel: "Local Exchange Zone",
+        imageUrl,
       });
       setTitle("");
       setDescription("");
       setPrice("");
       setCategory("General");
-      setCompartmentSize("M");
+      setImageUrl(null);
       setMessage("Listing posted.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not post");
@@ -75,15 +92,48 @@ export default function SellPage() {
     }
   }
 
+  const preview = mediaUrl(imageUrl);
+
   return (
     <div className="grid gap-8 lg:grid-cols-2">
       <form onSubmit={onSubmit} className="rounded-2xl bg-white p-5 shadow-sm">
         <h1 className="text-2xl font-bold">Post an item</h1>
         <p className="mt-2 text-sm text-zinc-600">
-          Every item must fit a Relai Exchange Zone compartment. Choose the
-          smallest size using the suitcase guide — Large is about 2 carry-ons.
+          Items must fit a Relai Exchange Zone compartment. All doors are the
+          same size. A listing photo is optional.
         </p>
         <div className="mt-4 space-y-3">
+          <div>
+            <p className="mb-2 text-sm font-semibold">Photo (optional)</p>
+            {preview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={preview}
+                alt="Listing preview"
+                className="mb-2 h-44 w-full rounded-xl object-cover"
+              />
+            ) : (
+              <div className="mb-2 flex h-28 items-center justify-center rounded-xl bg-zinc-100 text-sm text-zinc-500">
+                No photo yet
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={busy || photoBusy}
+              onChange={e => void onFileChange(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-zinc-600"
+            />
+            {imageUrl ? (
+              <button
+                type="button"
+                className="mt-2 text-sm font-semibold text-zinc-600 underline"
+                onClick={() => setImageUrl(null)}
+              >
+                Remove photo
+              </button>
+            ) : null}
+          </div>
           <input
             className="w-full rounded-xl border border-zinc-200 px-4 py-3"
             placeholder="Title"
@@ -123,37 +173,13 @@ export default function SellPage() {
               ))}
             </div>
           </div>
-          <div>
-            <p className="mb-2 text-sm font-semibold">
-              Exchange Zone compartment size
-            </p>
-            <div className="space-y-2">
-              {COMPARTMENT_SIZES.map(size => (
-                <button
-                  key={size.id}
-                  type="button"
-                  onClick={() => setCompartmentSize(size.id)}
-                  className={`w-full rounded-xl border-2 px-4 py-3 text-left ${
-                    compartmentSize === size.id
-                      ? "border-zinc-900"
-                      : "border-zinc-100"
-                  }`}
-                >
-                  <p className="font-semibold">
-                    {size.label} · {size.fitGuide}
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-600">{size.description}</p>
-                </button>
-              ))}
-            </div>
-          </div>
           {message ? <p className="text-sm text-zinc-600">{message}</p> : null}
           <button
             type="submit"
-            disabled={busy}
+            disabled={busy || photoBusy}
             className="w-full rounded-xl bg-zinc-900 py-3 font-semibold text-white disabled:opacity-50"
           >
-            {busy ? "Posting…" : "Post listing"}
+            {busy ? "Posting…" : photoBusy ? "Uploading photo…" : "Post listing"}
           </button>
         </div>
       </form>

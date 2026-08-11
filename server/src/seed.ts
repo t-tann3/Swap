@@ -12,8 +12,9 @@ const SEED_SELLER = {
 };
 
 function listing(
-  partial: Omit<Listing, "sellerUserId" | "sellerEmail" | "sellerName" | "createdAt" | "updatedAt" | "status"> & {
+  partial: Omit<Listing, "sellerUserId" | "sellerEmail" | "sellerName" | "createdAt" | "updatedAt" | "status" | "imageUrl"> & {
     status?: Listing["status"];
+    imageUrl?: string | null;
   },
 ): Listing {
   const ts = now();
@@ -22,6 +23,7 @@ function listing(
     sellerEmail: SEED_SELLER.email,
     sellerName: SEED_SELLER.name,
     status: partial.status ?? "available",
+    imageUrl: partial.imageUrl ?? null,
     createdAt: ts,
     updatedAt: ts,
     ...partial,
@@ -52,7 +54,6 @@ export function createSeedDatabase(): Database {
           "Unopened long-grain rice. Great for a pantry share or neighborhood pickup.",
         priceCents: 800,
         category: "Food",
-        compartmentSize: "M",
         condition: "new",
         locationLabel: "Community Pantry Zone",
         imageColor: "#D4A574",
@@ -63,7 +64,6 @@ export function createSeedDatabase(): Database {
         description: "Shelf-stable black beans. Ideal for food pantry swaps.",
         priceCents: 500,
         category: "Food",
-        compartmentSize: "S",
         condition: "new",
         locationLabel: "Community Pantry Zone",
         imageColor: "#6B4F3A",
@@ -74,7 +74,6 @@ export function createSeedDatabase(): Database {
         description: "Gently used community cookbook with local recipes.",
         priceCents: 1200,
         category: "Books",
-        compartmentSize: "S",
         condition: "good",
         locationLabel: "Library Exchange Zone",
         imageColor: "#C45C26",
@@ -85,7 +84,6 @@ export function createSeedDatabase(): Database {
         description: "Clean medium winter jacket. Soft shell, water resistant.",
         priceCents: 3500,
         category: "Clothing",
-        compartmentSize: "L",
         condition: "like_new",
         locationLabel: "Campus Exchange Zone",
         imageColor: "#1F3A5F",
@@ -96,7 +94,6 @@ export function createSeedDatabase(): Database {
         description: "Over-ear Bluetooth headphones. Works great, minor wear on ear pads.",
         priceCents: 4500,
         category: "Electronics",
-        compartmentSize: "M",
         condition: "good",
         locationLabel: "Downtown Exchange Zone",
         imageColor: "#222222",
@@ -107,7 +104,6 @@ export function createSeedDatabase(): Database {
         description: "Adjustable LED desk lamp. Perfect for a dorm or home office.",
         priceCents: 1800,
         category: "Home",
-        compartmentSize: "M",
         condition: "like_new",
         locationLabel: "Downtown Exchange Zone",
         imageColor: "#E8C547",
@@ -118,7 +114,6 @@ export function createSeedDatabase(): Database {
         description: "Set of 40 wooden blocks. Cleaned and ready for pickup.",
         priceCents: 1500,
         category: "Kids",
-        compartmentSize: "M",
         condition: "good",
         locationLabel: "Family Exchange Zone",
         imageColor: "#E07A5F",
@@ -129,7 +124,6 @@ export function createSeedDatabase(): Database {
         description: "Basil, mint, and parsley starters in small pots.",
         priceCents: 900,
         category: "Garden",
-        compartmentSize: "S",
         condition: "new",
         locationLabel: "Community Garden Zone",
         imageColor: "#2D6A4F",

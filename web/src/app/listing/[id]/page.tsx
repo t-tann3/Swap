@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 
 import { useMarketplace } from "../../../context/MarketplaceContext";
 import { apiRequest } from "../../../lib/api";
-import { formatCompartmentSize } from "../../../lib/compartmentSizes";
+import { mediaUrl } from "../../../lib/media";
 import type { Listing } from "../../../lib/types";
 
 export default function ListingDetailPage() {
@@ -41,10 +41,19 @@ export default function ListingDetailPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div
-        className="mb-5 h-48 rounded-2xl"
-        style={{ backgroundColor: listing.imageColor }}
-      />
+      {mediaUrl(listing.imageUrl) ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={mediaUrl(listing.imageUrl)!}
+          alt={listing.title}
+          className="mb-5 h-48 w-full rounded-2xl object-cover"
+        />
+      ) : (
+        <div
+          className="mb-5 h-48 rounded-2xl"
+          style={{ backgroundColor: listing.imageColor }}
+        />
+      )}
       <h1 className="text-3xl font-bold">{listing.title}</h1>
       {showPrices ? (
         <p className="mt-2 text-2xl font-semibold">
@@ -55,18 +64,13 @@ export default function ListingDetailPage() {
         <span className="rounded bg-indigo-50 px-2.5 py-1 text-xs font-bold uppercase text-indigo-800">
           {listing.category}
         </span>
-        <span className="rounded bg-zinc-100 px-2.5 py-1 text-xs font-bold uppercase text-zinc-700">
-          {formatCompartmentSize(listing.compartmentSize)}
-        </span>
         <span className="text-sm capitalize text-zinc-500">
           {listing.condition.replace("_", " ")} · {listing.status}
         </span>
       </div>
       <p className="mt-4 text-zinc-700 leading-relaxed">{listing.description}</p>
       <p className="mt-2 text-sm text-zinc-500">
-        Must fit a Relai Exchange Zone compartment (
-        {formatCompartmentSize(listing.compartmentSize)}). Larger items cannot
-        be listed.
+        Must fit a Relai Exchange Zone compartment. All doors are the same size.
       </p>
       <p className="mt-3 text-sm text-zinc-500">
         Seller: {listing.sellerName ?? listing.sellerEmail ?? "Seller"}

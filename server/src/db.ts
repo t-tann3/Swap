@@ -1,17 +1,26 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { MongoClient, type Db as MongoDb, type AnyBulkWriteOperation } from "mongodb";
 
-import { isCompartmentSizeId } from "./compartmentSizes.js";
 import { createSeedDatabase } from "./seed.js";
-import type { Database, Listing, Order, Profile } from "./types.js";
+import type { Database, Favorite, Listing, Order, Profile } from "./types.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.join(__dirname, "..", "data");
-const dbPath = path.join(dataDir, "db.json");
+const DB_NAME = process.env.MONGODB_DB_NAME?.trim() || "swap";
 
+let client: MongoClient | null = null;
+let mongo: MongoDb | null = null;
+/** In-memory working set kept in sync with MongoDB. */
 let db: Database = createSeedDatabase();
+/** Serialize reloads + writes so concurrent mutates cannot clobber each other. */
 let writeChain: Promise<void> = Promise.resolve();
+
+function mongoUri(): string {
+  const uri = process.env.MONGODB_URI?.trim();
+  if (!uri) {
+    throw new Error(
+      "MONGODB_URI is required. Set it in server/.env (MongoDB Atlas connection string).",
+    );
+  }
+  return uri;
+}
 
 function migrateDb(current: Database): Database {
   for (const profile of current.profiles) {
@@ -20,21 +29,14 @@ function migrateDb(current: Database): Database {
     if (p.stripePayoutsReady === undefined) p.stripePayoutsReady = false;
   }
   for (const listing of current.listings) {
-    const l = listing as Listing;
-    if (!isCompartmentSizeId(String(l.compartmentSize ?? ""))) {
-      // Legacy rows: Medium fits most demo inventory inside a Full Tower.
-      l.compartmentSize = "M";
-    }
+    const l = listing as Listing & { compartmentSize?: unknown };
+    delete l.compartmentSize;
+    if (l.imageUrl === undefined) l.imageUrl = null;
   }
   for (const order of current.orders) {
-    const o = order as Order;
-    if (!isCompartmentSizeId(String(o.compartmentSize ?? ""))) {
-      const listing = current.listings.find(l => l.id === o.listingId);
-      o.compartmentSize =
-        listing && isCompartmentSizeId(listing.compartmentSize)
-          ? listing.compartmentSize
-          : "M";
-    }
+    const o = order as Order & { compartmentSize?: unknown };
+    delete o.compartmentSize;
+    if (o.dropOffPhotoUrl === undefined) o.dropOffPhotoUrl = null;
     if (o.stripePaymentIntentId === undefined) o.stripePaymentIntentId = null;
     if (o.stripeTransferId === undefined) o.stripeTransferId = null;
     if (o.stripeRefundId === undefined) o.stripeRefundId = null;
@@ -63,48 +65,198 @@ function migrateDb(current: Database): Database {
   return current;
 }
 
-export async function initDb(): Promise<void> {
-  await mkdir(dataDir, { recursive: true });
-  try {
-    const raw = await readFile(dbPath, "utf8");
-    db = migrateDb(JSON.parse(raw) as Database);
-    if (!db.listings?.length) {
-      db = createSeedDatabase();
-      await persist();
-    } else {
-      await persist();
-    }
-  } catch {
-    db = createSeedDatabase();
-    await persist();
+function stripMongoId<T extends object>(doc: T): T {
+  const copy = { ...doc } as T & { _id?: unknown };
+  delete copy._id;
+  return copy;
+}
+
+async function loadFromMongo(database: MongoDb): Promise<Database | null> {
+  const [profiles, listings, orders, favorites, stripeEvents, relaiEvents] =
+    await Promise.all([
+      database.collection("profiles").find({}).toArray(),
+      database.collection("listings").find({}).toArray(),
+      database.collection("orders").find({}).toArray(),
+      database.collection("favorites").find({}).toArray(),
+      database.collection("processedStripeEvents").find({}).toArray(),
+      database.collection("processedRelaiEvents").find({}).toArray(),
+    ]);
+
+  const loaded: Database = {
+    profiles: profiles.map(d => stripMongoId(d as unknown as Profile)),
+    listings: listings.map(d => stripMongoId(d as unknown as Listing)),
+    orders: orders.map(d => stripMongoId(d as unknown as Order)),
+    favorites: favorites.map(d => stripMongoId(d as unknown as Favorite)),
+    processedStripeEvents: stripeEvents.map(e => String(e._id)),
+    processedRelaiEvents: relaiEvents.map(e => String(e._id)),
+  };
+
+  const hasData =
+    loaded.profiles.length > 0 ||
+    loaded.listings.length > 0 ||
+    loaded.orders.length > 0 ||
+    loaded.favorites.length > 0;
+
+  return hasData ? migrateDb(loaded) : null;
+}
+
+/**
+ * Upsert all rows and delete docs no longer present.
+ * Avoids wipe-then-insert gaps that can lose orders under concurrent writers.
+ */
+async function syncKeyedCollection<T extends Record<string, unknown>>(
+  database: MongoDb,
+  name: string,
+  rows: T[],
+  getId: (row: T) => string,
+): Promise<void> {
+  const col = database.collection(name);
+  const ids = rows.map(getId);
+  if (ids.length === 0) {
+    await col.deleteMany({});
+    return;
+  }
+  await col.deleteMany({ _id: { $nin: ids as never[] } });
+  const ops: AnyBulkWriteOperation[] = rows.map(row => {
+    const id = getId(row);
+    const doc = { ...row, _id: id };
+    return {
+      replaceOne: {
+        filter: { _id: id as never },
+        replacement: doc as never,
+        upsert: true,
+      },
+    };
+  });
+  await col.bulkWrite(ops, { ordered: false });
+}
+
+async function persistToMongo(current: Database): Promise<void> {
+  if (!mongo) {
+    throw new Error("MongoDB is not connected.");
+  }
+  const database = mongo;
+
+  await Promise.all([
+    syncKeyedCollection(database, "profiles", current.profiles as unknown as Record<string, unknown>[], p =>
+      String(p.userId),
+    ),
+    syncKeyedCollection(database, "listings", current.listings as unknown as Record<string, unknown>[], l =>
+      String(l.id),
+    ),
+    syncKeyedCollection(database, "orders", current.orders as unknown as Record<string, unknown>[], o =>
+      String(o.id),
+    ),
+    syncKeyedCollection(
+      database,
+      "favorites",
+      current.favorites as unknown as Record<string, unknown>[],
+      f => `${f.userId}:${f.listingId}`,
+    ),
+    syncKeyedCollection(
+      database,
+      "processedStripeEvents",
+      current.processedStripeEvents.map(id => ({ _id: id })),
+      e => String(e._id),
+    ),
+    syncKeyedCollection(
+      database,
+      "processedRelaiEvents",
+      current.processedRelaiEvents.map(id => ({ _id: id })),
+      e => String(e._id),
+    ),
+  ]);
+}
+
+async function reloadIntoMemory(): Promise<void> {
+  if (!mongo) return;
+  const latest = await loadFromMongo(mongo);
+  if (latest) {
+    db = latest;
   }
 }
 
-async function persist(): Promise<void> {
-  writeChain = writeChain.then(() =>
-    writeFile(dbPath, JSON.stringify(db, null, 2), "utf8"),
-  );
+export async function initDb(): Promise<void> {
+  client = new MongoClient(mongoUri());
+  await client.connect();
+  mongo = client.db(DB_NAME);
+
+  // Indexes for common lookups
+  await Promise.all([
+    mongo.collection("orders").createIndex({ buyerUserId: 1 }),
+    mongo.collection("orders").createIndex({ sellerUserId: 1 }),
+    mongo.collection("orders").createIndex({ status: 1 }),
+    mongo.collection("listings").createIndex({ status: 1 }),
+    mongo.collection("favorites").createIndex({ userId: 1 }),
+  ]);
+
+  const existing = await loadFromMongo(mongo);
+  if (existing) {
+    db = existing;
+    console.log(
+      `[db] MongoDB connected (${DB_NAME}): ` +
+        `${db.listings.length} listings, ${db.orders.length} orders`,
+    );
+  } else {
+    db = migrateDb(createSeedDatabase());
+    await persistToMongo(db);
+    console.log(
+      `[db] MongoDB connected (${DB_NAME}): seeded ${db.listings.length} demo listings`,
+    );
+  }
+}
+
+/** Pull the latest documents from Mongo into memory (serialized). */
+export async function refreshDb(): Promise<Database> {
+  writeChain = writeChain.then(() => reloadIntoMemory());
   await writeChain;
+  return db;
 }
 
 export function getDb(): Database {
   return db;
 }
 
+/**
+ * Apply an in-memory mutation and persist to Mongo.
+ * Reloads from Mongo first so a stale process cannot wipe newer orders.
+ */
 export async function mutateDb(
   mutator: (current: Database) => void,
 ): Promise<Database> {
-  mutator(db);
-  await persist();
+  writeChain = writeChain.then(async () => {
+    await reloadIntoMemory();
+    const beforeOrders = db.orders.length;
+    mutator(db);
+    await persistToMongo(db);
+    if (db.orders.length !== beforeOrders) {
+      console.log(
+        `[db] orders persisted: ${beforeOrders} → ${db.orders.length}`,
+      );
+    }
+  });
+  await writeChain;
   return db;
 }
 
 export async function resetDb(): Promise<Database> {
-  db = createSeedDatabase();
-  await persist();
+  writeChain = writeChain.then(async () => {
+    db = migrateDb(createSeedDatabase());
+    await persistToMongo(db);
+  });
+  await writeChain;
   return db;
 }
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export async function closeDb(): Promise<void> {
+  await writeChain;
+  if (client) {
+    await client.close();
+    client = null;
+    mongo = null;
+  }
 }
