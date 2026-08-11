@@ -30,11 +30,10 @@ export function profileHasAdminRole(profile: Profile | undefined | null): boolea
 
 /**
  * Sync allowlist → profile.roles.
- * Admin cannot be self-selected; it is granted/revoked only via ADMIN_USER_IDS / ADMIN_EMAILS.
- * Allowlisted admins are ops-only (no buyer/seller marketplace roles).
+ * Admin is grantable only via allowlist; allowlisted users may opt out via adminOptOut.
  */
 export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
-  const wantAdmin = isAdminAllowlisted(user);
+  const onAllowlist = isAdminAllowlisted(user);
   const ts = new Date().toISOString();
   let profile: Profile | undefined;
 
@@ -42,19 +41,30 @@ export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
     const idx = db.profiles.findIndex(p => p.userId === user.userId);
     if (idx >= 0) {
       const current = db.profiles[idx]!;
+      const marketplace = current.roles.filter(
+        (r): r is MarketplaceRole => r === "buyer" || r === "seller",
+      );
+      const adminOptOut = onAllowlist ? Boolean(current.adminOptOut) : false;
       let roles: MarketplaceRole[];
-      if (wantAdmin) {
-        roles = ["admin"];
+      if (onAllowlist && !adminOptOut) {
+        roles =
+          marketplace.length > 0
+            ? [...marketplace, "admin"]
+            : ["admin", "buyer", "seller"];
+      } else if (marketplace.length > 0) {
+        roles = marketplace;
+      } else if (onAllowlist && adminOptOut) {
+        // Opted out of admin with no marketplace roles — keep buyer/seller usable.
+        roles = ["buyer", "seller"];
       } else {
-        roles = current.roles.filter(
-          (r): r is MarketplaceRole => r === "buyer" || r === "seller",
-        );
+        roles = [];
       }
       profile = {
         ...current,
         email: user.email,
         name: user.name,
-        roles,
+        roles: [...new Set(roles)],
+        adminOptOut,
         updatedAt: ts,
       };
       db.profiles[idx] = profile;
@@ -63,10 +73,14 @@ export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
         userId: user.userId,
         email: user.email,
         name: user.name,
-        roles: wantAdmin ? ["admin"] : [],
+        roles: onAllowlist ? ["admin", "buyer", "seller"] : [],
         bio: "",
         stripeAccountId: null,
         stripePayoutsReady: false,
+        patronCap: null,
+        isPantrySeller: false,
+        pantryBlocked: false,
+        adminOptOut: false,
         createdAt: ts,
         updatedAt: ts,
       };
@@ -77,10 +91,19 @@ export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
   return profile!;
 }
 
+/** Profile JSON for clients, including whether they can toggle admin on. */
+export function profileClientPayload(user: AuthUser, profile: Profile) {
+  return {
+    ...profile,
+    adminEligible: isAdminAllowlisted(user),
+  };
+}
+
 export function userIsAdmin(user: AuthUser): boolean {
-  if (isAdminAllowlisted(user)) return true;
   const profile = getDb().profiles.find(p => p.userId === user.userId);
-  return profileHasAdminRole(profile);
+  if (profileHasAdminRole(profile)) return true;
+  // Allowlist alone is not enough if they opted out.
+  return false;
 }
 
 /** Optional machine key for cron/scripts (not a substitute for the admin role in-app). */

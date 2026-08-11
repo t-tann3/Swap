@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 
-import { isAdminAllowlisted, syncAdminRoleForUser } from "../adminAuth.js";
+import { isAdminAllowlisted, profileClientPayload, syncAdminRoleForUser } from "../adminAuth.js";
 import { requireAuth } from "../auth.js";
 import { LISTING_CATEGORIES } from "../categories.js";
 import { getDb, mutateDb, newId, refreshDb, resetDb } from "../db.js";
@@ -22,6 +22,16 @@ import {
   cancelAuthorizedPayment,
   refreshSellerPayoutReadiness,
 } from "../payments.js";
+import {
+  applyStockAdjustment,
+  fulfillmentBucket,
+  fulfillmentSortKey,
+  getPantrySettings,
+  isPantryMode,
+  sellerInventory,
+  sellerNeedsPayouts,
+  syncListingStockStatus,
+} from "../pantry.js";
 import { SEED_SELLER_USER_ID } from "../seed.js";
 import { paymentsEnabled } from "../stripe.js";
 import type { Listing, MarketplaceRole, Order, Profile } from "../types.js";
@@ -53,19 +63,43 @@ function adoptSeedSellerAssets(
 ): void {
   if (order.sellerUserId !== SEED_SELLER_USER_ID) return;
   order.sellerUserId = user.userId;
-  const listing = db.listings.find(l => l.id === order.listingId);
-  if (listing && listing.sellerUserId === SEED_SELLER_USER_ID) {
-    listing.sellerUserId = user.userId;
-    listing.sellerEmail = user.email;
-    listing.sellerName = user.name;
-    listing.updatedAt = new Date().toISOString();
+  const listingIds = new Set(
+    (order.items?.length
+      ? order.items.map(i => i.listingId)
+      : [order.listingId]
+    ).filter(Boolean),
+  );
+  for (const listingId of listingIds) {
+    const listing = db.listings.find(l => l.id === listingId);
+    if (listing && listing.sellerUserId === SEED_SELLER_USER_ID) {
+      listing.sellerUserId = user.userId;
+      listing.sellerEmail = user.email;
+      listing.sellerName = user.name;
+      listing.updatedAt = new Date().toISOString();
+    }
   }
 }
 
-/** Self-serve roles only — `admin` is never accepted from the client. */
+function enrichOrder(order: Order) {
+  const items = (order.items?.length
+    ? order.items
+    : [{ listingId: order.listingId, quantity: 1, title: "Item" }]
+  ).map(line => ({
+    ...line,
+    listing: getDb().listings.find(l => l.id === line.listingId) ?? null,
+  }));
+  return {
+    ...order,
+    items,
+    listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
+  };
+}
+
+/** Self-serve roles — `admin` is allowlist-only; `adminEnabled` opts in/out for allowlisted users. */
 const rolesSchema = z.object({
   roles: z.array(z.enum(["buyer", "seller"])).min(1),
   bio: z.string().max(280).optional(),
+  adminEnabled: z.boolean().optional(),
 });
 
 const listingSchema = z.object({
@@ -77,6 +111,8 @@ const listingSchema = z.object({
     .enum(["new", "like_new", "good", "fair"])
     .default("good"),
   locationLabel: z.string().trim().max(120).default("Local Exchange Zone"),
+  stockQty: z.number().int().min(1).max(500).optional(),
+  maxPerOrder: z.number().int().min(1).max(50).optional(),
   imageUrl: z
     .string()
     .nullable()
@@ -129,7 +165,7 @@ marketplaceRouter.get("/listings/:id", (req, res) => {
 
 marketplaceRouter.get("/me/profile", requireAuth, async (req, res) => {
   const profile = await syncAdminRoleForUser(req.user!);
-  res.json(profile);
+  res.json(profileClientPayload(req.user!, profile));
 });
 
 marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
@@ -139,26 +175,33 @@ marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
     return;
   }
   const user = req.user!;
-  // Ops admins cannot also be marketplace buyers/sellers.
-  if (isAdminAllowlisted(user)) {
-    const profile = await syncAdminRoleForUser(user);
-    res.json(profile);
-    return;
-  }
   const ts = new Date().toISOString();
-  const roles = [...new Set(parsed.data.roles)] as MarketplaceRole[];
+  const selfServe = [...new Set(parsed.data.roles)] as MarketplaceRole[];
+  const onAllowlist = isAdminAllowlisted(user);
   let profile: Profile | undefined;
 
   await mutateDb(db => {
     const idx = db.profiles.findIndex(p => p.userId === user.userId);
+    const current = idx >= 0 ? db.profiles[idx]! : null;
+    let adminOptOut = current?.adminOptOut ?? false;
+    if (onAllowlist && parsed.data.adminEnabled !== undefined) {
+      adminOptOut = !parsed.data.adminEnabled;
+    }
+    if (!onAllowlist) adminOptOut = false;
+
+    const roles: MarketplaceRole[] =
+      onAllowlist && !adminOptOut
+        ? [...selfServe, "admin"]
+        : selfServe;
+
     if (idx >= 0) {
-      const current = db.profiles[idx]!;
       profile = {
-        ...current,
+        ...current!,
         email: user.email,
         name: user.name,
-        roles,
-        bio: parsed.data.bio ?? current.bio,
+        roles: [...new Set(roles)],
+        bio: parsed.data.bio ?? current!.bio,
+        adminOptOut,
         updatedAt: ts,
       };
       db.profiles[idx] = profile;
@@ -167,10 +210,14 @@ marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
         userId: user.userId,
         email: user.email,
         name: user.name,
-        roles,
+        roles: [...new Set(roles)],
         bio: parsed.data.bio ?? "",
         stripeAccountId: null,
         stripePayoutsReady: false,
+        patronCap: null,
+        isPantrySeller: false,
+        pantryBlocked: false,
+        adminOptOut,
         createdAt: ts,
         updatedAt: ts,
       };
@@ -178,7 +225,7 @@ marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
     }
   });
 
-  res.json(profile);
+  res.json(profileClientPayload(user, profile!));
 });
 
 marketplaceRouter.post("/listings", requireAuth, async (req, res) => {
@@ -198,6 +245,7 @@ marketplaceRouter.post("/listings", requireAuth, async (req, res) => {
     return;
   }
 
+  const pantry = isPantryMode();
   const ts = new Date().toISOString();
   const listing: Listing = {
     id: newId("lst"),
@@ -206,19 +254,28 @@ marketplaceRouter.post("/listings", requireAuth, async (req, res) => {
     sellerName: user.name,
     title: parsed.data.title,
     description: parsed.data.description,
-    priceCents: parsed.data.priceCents,
+    priceCents: pantry ? 0 : parsed.data.priceCents,
     category: parsed.data.category,
     condition: parsed.data.condition,
     locationLabel: parsed.data.locationLabel,
     status: "available",
     imageColor: "#4B5563",
     imageUrl: parsed.data.imageUrl ?? null,
+    stockQty: pantry ? (parsed.data.stockQty ?? 1) : 1,
+    maxPerOrder: pantry ? (parsed.data.maxPerOrder ?? 1) : 1,
     createdAt: ts,
     updatedAt: ts,
   };
 
   await mutateDb(db => {
     db.listings.unshift(listing);
+    if (pantry) {
+      const p = db.profiles.find(x => x.userId === user.userId);
+      if (p) {
+        p.isPantrySeller = true;
+        p.updatedAt = ts;
+      }
+    }
   });
   res.status(201).json(listing);
 });
@@ -244,11 +301,116 @@ marketplaceRouter.patch("/listings/:id", requireAuth, async (req, res) => {
   let updated: Listing | undefined;
   await mutateDb(db => {
     const listing = db.listings.find(l => l.id === req.params.id)!;
-    Object.assign(listing, parsed.data, { updatedAt: new Date().toISOString() });
+    const ts = new Date().toISOString();
+    Object.assign(listing, parsed.data, { updatedAt: ts });
+    if (parsed.data.stockQty !== undefined) {
+      syncListingStockStatus(listing, ts);
+    }
     updated = listing;
   });
   res.json(updated);
 });
+
+marketplaceRouter.get("/me/inventory", requireAuth, async (req, res) => {
+  if (!isPantryMode()) {
+    res.status(409).json({
+      code: "pantry_disabled",
+      message: "Inventory is only available when pantry mode is on.",
+    });
+    return;
+  }
+  const user = req.user!;
+  const profile = getDb().profiles.find(p => p.userId === user.userId);
+  if (!profile?.roles.includes("seller")) {
+    res.status(403).json({
+      code: "seller_required",
+      message: "Seller role required.",
+    });
+    return;
+  }
+  await refreshDb();
+  const settings = getPantrySettings();
+  res.json({
+    lowStockThreshold: settings.lowStockThreshold,
+    data: sellerInventory(user.userId),
+  });
+});
+
+marketplaceRouter.post(
+  "/listings/:id/stock-adjust",
+  requireAuth,
+  async (req, res) => {
+    if (!isPantryMode()) {
+      res.status(409).json({
+        code: "pantry_disabled",
+        message: "Stock adjustments require pantry mode.",
+      });
+      return;
+    }
+    const parsed = z
+      .object({
+        delta: z.number().int().min(-500).max(500),
+        reason: z.string().trim().min(2).max(200),
+      })
+      .safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({
+        code: "invalid_body",
+        message: "delta and reason required.",
+      });
+      return;
+    }
+    if (parsed.data.delta === 0) {
+      res.status(400).json({ code: "invalid_delta", message: "delta cannot be 0." });
+      return;
+    }
+
+    const user = req.user!;
+    const existing = getDb().listings.find(l => l.id === req.params.id);
+    if (!existing) {
+      res.status(404).json({ code: "not_found", message: "Listing not found." });
+      return;
+    }
+    if (existing.sellerUserId !== user.userId) {
+      res.status(403).json({ code: "forbidden", message: "Not your listing." });
+      return;
+    }
+
+    let adjustment;
+    let listing: Listing | undefined;
+    try {
+      await mutateDb(db => {
+        const row = db.listings.find(l => l.id === req.params.id)!;
+        const ts = new Date().toISOString();
+        adjustment = applyStockAdjustment(
+          row,
+          user.userId,
+          parsed.data.delta,
+          parsed.data.reason,
+          ts,
+        );
+        if (!db.stockAdjustments) db.stockAdjustments = [];
+        db.stockAdjustments.unshift(adjustment);
+        // Cap ledger growth in the JSON/Mongo demo DB.
+        if (db.stockAdjustments.length > 500) {
+          db.stockAdjustments.length = 500;
+        }
+        listing = row;
+      });
+    } catch (err) {
+      const code = (err as Error).message;
+      res.status(400).json({
+        code,
+        message:
+          code === "invalid_reason"
+            ? "Enter a short reason for the adjustment."
+            : "Could not adjust stock.",
+      });
+      return;
+    }
+    res.json({ listing, adjustment });
+  },
+);
 
 marketplaceRouter.delete("/listings/:id", requireAuth, async (req, res) => {
   const user = req.user!;
@@ -278,6 +440,14 @@ marketplaceRouter.delete("/listings/:id", requireAuth, async (req, res) => {
 });
 
 marketplaceRouter.post("/listings/:id/buy", requireAuth, async (req, res) => {
+  if (isPantryMode()) {
+    res.status(409).json({
+      code: "use_basket",
+      message:
+        "Pantry mode is on. Add items to your basket and check out together so your item cap is enforced.",
+    });
+    return;
+  }
   const user = req.user!;
   const profile = getDb().profiles.find(p => p.userId === user.userId);
   if (!profile?.roles.includes("buyer")) {
@@ -357,10 +527,18 @@ marketplaceRouter.post("/listings/:id/buy", requireAuth, async (req, res) => {
       }
       const ts = new Date().toISOString();
       listing.status = "reserved";
+      listing.stockQty = 0;
       listing.updatedAt = ts;
       order = {
         id: newId("ord"),
         listingId: listing.id,
+        items: [
+          {
+            listingId: listing.id,
+            quantity: 1,
+            title: listing.title,
+          },
+        ],
         buyerUserId: user.userId,
         sellerUserId: listing.sellerUserId,
         priceCents: listing.priceCents,
@@ -435,11 +613,56 @@ marketplaceRouter.get("/orders", requireAuth, async (req, res) => {
   const orders = getDb().orders.filter(o =>
     role === "seller" ? isOrderSeller(o, user.userId) : o.buyerUserId === user.userId,
   );
-  const enriched = orders.map(o => ({
-    ...o,
-    listing: getDb().listings.find(l => l.id === o.listingId) ?? null,
-  }));
+  const enriched = orders.map(o => enrichOrder(o));
   res.json({ data: enriched });
+});
+
+marketplaceRouter.get("/me/fulfillment", requireAuth, async (req, res) => {
+  await sweepBuyerNoShows().catch(() => undefined);
+  await refreshDb();
+  const user = req.user!;
+  const profile = getDb().profiles.find(p => p.userId === user.userId);
+  if (!profile?.roles.includes("seller")) {
+    res.status(403).json({
+      code: "seller_required",
+      message: "Seller role required.",
+    });
+    return;
+  }
+  const now = Date.now();
+  const open = getDb()
+    .orders.filter(
+      o =>
+        isOrderSeller(o, user.userId) &&
+        (o.status === "pending_accept" ||
+          o.status === "accepted" ||
+          o.status === "ready_for_pickup"),
+    )
+    .map(o => {
+      const enriched = enrichOrder(o);
+      const bucket = fulfillmentBucket(o, now);
+      return {
+        ...enriched,
+        fulfillmentBucket: bucket,
+        overdue: bucket === "overdue",
+      };
+    })
+    .sort(
+      (a, b) =>
+        fulfillmentSortKey(a as Order, now) - fulfillmentSortKey(b as Order, now),
+    );
+
+  const counts = {
+    needs_accept: 0,
+    needs_drop_off: 0,
+    overdue: 0,
+    ready: 0,
+  };
+  for (const o of open) {
+    if (o.fulfillmentBucket) counts[o.fulfillmentBucket] += 1;
+  }
+
+  res.json({ counts, data: open });
 });
 
 marketplaceRouter.get("/orders/:id", requireAuth, async (req, res) => {
@@ -454,10 +677,7 @@ marketplaceRouter.get("/orders/:id", requireAuth, async (req, res) => {
     res.status(403).json({ code: "forbidden", message: "Not your order." });
     return;
   }
-  res.json({
-    ...order,
-    listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
-  });
+  res.json(enrichOrder(order));
 });
 
 marketplaceRouter.post("/orders/:id/accept", requireAuth, async (req, res) => {
@@ -487,7 +707,7 @@ marketplaceRouter.post("/orders/:id/accept", requireAuth, async (req, res) => {
     return;
   }
 
-  if (paymentsEnabled()) {
+  if (paymentsEnabled() && sellerNeedsPayouts(profile)) {
     const ready = await refreshSellerPayoutReadiness(user.userId);
     if (!ready) {
       res.status(403).json({
@@ -508,7 +728,7 @@ marketplaceRouter.post("/orders/:id/accept", requireAuth, async (req, res) => {
     order.sellerDropOffDeadlineAt = deadlineFromNow(sellerDropOffHours(), ts);
     order.updatedAt = ts;
   });
-  res.json(order);
+  res.json(enrichOrder(order!));
 });
 
 marketplaceRouter.post("/orders/:id/drop-off", requireAuth, async (req, res) => {
@@ -575,7 +795,7 @@ marketplaceRouter.post("/orders/:id/drop-off", requireAuth, async (req, res) => 
     order.dropOffPhotoUrl = parsed.data.dropOffPhotoUrl || null;
     order.updatedAt = ts;
   });
-  res.json(order);
+  res.json(enrichOrder(order!));
 });
 
 marketplaceRouter.post("/orders/:id/complete", requireAuth, async (req, res) => {
@@ -597,10 +817,7 @@ marketplaceRouter.post("/orders/:id/complete", requireAuth, async (req, res) => 
     return;
   }
   if (existing.status === "completed") {
-    res.json({
-      ...existing,
-      listing: getDb().listings.find(l => l.id === existing.listingId) ?? null,
-    });
+    res.json(enrichOrder(existing));
     return;
   }
   if (existing.status !== "ready_for_pickup") {
@@ -616,10 +833,7 @@ marketplaceRouter.post("/orders/:id/complete", requireAuth, async (req, res) => 
     // Polling Relai is the fallback when the client finishes unlock before the webhook arrives.
     await ensurePickupVerifiedFromRelai(existing);
     const order = await finalizeOrderEscrow(existing.id, "pickup");
-    res.json({
-      ...order,
-      listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
-    });
+    res.json(enrichOrder(order));
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     const code = (err as Error).message;
@@ -661,12 +875,13 @@ marketplaceRouter.post("/orders/:id/cancel", requireAuth, async (req, res) => {
   }
 
   // After drop-off the item may already be in a locker — no self-serve cancel.
-  // Parties must open a dispute; admin refunds / releases after review.
   if (existing.status === "ready_for_pickup") {
+    const pantry = isPantryMode() || existing.priceCents === 0;
     res.status(409).json({
-      code: "in_locker_use_dispute",
-      message:
-        "This item may already be in an Exchange Zone. Open a dispute instead of cancelling — ops will refund or release after review.",
+      code: pantry ? "in_locker_contact_pantry" : "in_locker_use_dispute",
+      message: pantry
+        ? "This basket may already be in an Exchange Zone. Contact the pantry to resolve — it cannot be cancelled here."
+        : "This item may already be in an Exchange Zone. Open a dispute instead of cancelling — ops will refund or release after review.",
     });
     return;
   }
@@ -680,18 +895,18 @@ marketplaceRouter.post("/orders/:id/cancel", requireAuth, async (req, res) => {
         existing.id,
         "buyer_or_seller_cancel",
       );
-      res.json({
-        ...order,
-        listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
-      });
+      res.json(enrichOrder(order));
       return;
     }
 
+    const pantry = isPantryMode() || existing.priceCents === 0;
     res.status(409).json({
       code: "invalid_status",
       message:
         existing.status === "completed"
-          ? "Completed orders cannot be cancelled. Open a dispute if something is wrong."
+          ? pantry
+            ? "Completed orders cannot be cancelled. Contact the pantry if something is wrong."
+            : "Completed orders cannot be cancelled. Open a dispute if something is wrong."
           : existing.status === "cancelled"
             ? "This order is already cancelled."
             : `This order cannot be cancelled (status: ${existing.status}).`,
@@ -731,10 +946,14 @@ marketplaceRouter.post("/orders/:id/refund", requireAuth, async (req, res) => {
     return;
   }
 
+  const pantry = isPantryMode() || existing.priceCents === 0;
   res.status(409).json({
-    code: "in_locker_use_dispute",
-    message:
-      existing.status === "ready_for_pickup"
+    code: pantry ? "pantry_no_refunds" : "in_locker_use_dispute",
+    message: pantry
+      ? existing.status === "ready_for_pickup"
+        ? "This basket may already be in an Exchange Zone. Contact the pantry to resolve."
+        : "Refunds are not used in pantry mode. Contact the pantry if you need help."
+      : existing.status === "ready_for_pickup"
         ? "Self-serve refund is disabled after drop-off because the item may be in a locker. Open a dispute so ops can refund or release safely."
         : "Refund is only handled by ops after drop-off. Open a dispute if you need help.",
   });
@@ -742,6 +961,15 @@ marketplaceRouter.post("/orders/:id/refund", requireAuth, async (req, res) => {
 
 marketplaceRouter.post("/orders/:id/dispute", requireAuth, async (req, res) => {
   const user = req.user!;
+  const existing = getDb().orders.find(o => o.id === req.params.id);
+  if (isPantryMode() || (existing && existing.priceCents === 0)) {
+    res.status(409).json({
+      code: "pantry_no_disputes",
+      message:
+        "Disputes are not used in pantry mode. Contact the pantry to resolve issues.",
+    });
+    return;
+  }
   const parsed = z
     .object({ reason: z.string().min(8).max(1000) })
     .safeParse(req.body ?? {});
@@ -759,10 +987,7 @@ marketplaceRouter.post("/orders/:id/dispute", requireAuth, async (req, res) => {
       user.userId,
       parsed.data.reason,
     );
-    res.json({
-      ...order,
-      listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
-    });
+    res.json(enrichOrder(order));
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     const code = (err as Error).message;

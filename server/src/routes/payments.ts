@@ -15,28 +15,33 @@ import {
   platformFeeBps,
   publishableKey,
 } from "../stripe.js";
+import { isPantryMode, pantryPublicConfig } from "../pantry.js";
 
 export const paymentsRouter = Router();
 
 paymentsRouter.get("/config", (_req, res) => {
-  const enabled = paymentsEnabled();
+  const pantry = pantryPublicConfig();
+  const enabled = paymentsEnabled() && !pantry.pantryMode;
   res.json({
     enabled,
     /** When false, clients should hide prices and Stripe Connect (non-monetary mode). */
     showPrices: enabled,
     publishableKey: enabled ? publishableKey() : null,
     platformFeeBps: enabled ? platformFeeBps() : 0,
+    ...pantry,
   });
 });
 
 paymentsRouter.get("/connect/status", requireAuth, async (req, res) => {
   const user = req.user!;
   const profile = getDb().profiles.find(p => p.userId === user.userId);
-  if (!paymentsEnabled()) {
+  if (!paymentsEnabled() || isPantryMode() || profile?.isPantrySeller) {
     res.json({
       enabled: false,
       stripeAccountId: profile?.stripeAccountId ?? null,
       payoutsReady: true,
+      pantryMode: isPantryMode(),
+      isPantrySeller: Boolean(profile?.isPantrySeller),
     });
     return;
   }
@@ -72,6 +77,10 @@ paymentsRouter.post("/connect/onboard", requireAuth, async (req, res) => {
       bio: "",
       stripeAccountId: null,
       stripePayoutsReady: false,
+      patronCap: null,
+      isPantrySeller: false,
+      pantryBlocked: false,
+      adminOptOut: false,
       createdAt: ts,
       updatedAt: ts,
     };

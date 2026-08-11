@@ -12,17 +12,146 @@ import {
   setAdminHold,
 } from "../escrow.js";
 import { inspectOrderStripe } from "../payments.js";
+import {
+  buildPantryReport,
+  getPantrySettings,
+  getPatronAllocation,
+  pantryReportToCsv,
+  updatePantrySettings,
+} from "../pantry.js";
 import { SEED_SELLER_USER_ID } from "../seed.js";
 
 export const adminRouter = Router();
 
 adminRouter.use(requireAdmin);
 
+adminRouter.get("/pantry", (_req, res) => {
+  res.json(getPantrySettings());
+});
+
+adminRouter.put("/pantry", async (req, res) => {
+  const parsed = z
+    .object({
+      enabled: z.boolean().optional(),
+      defaultPatronCap: z.number().int().min(1).max(50).optional(),
+      basketHoldTtlMinutes: z.number().int().min(0).max(24 * 60).optional(),
+      lowStockThreshold: z.number().int().min(0).max(100).optional(),
+    })
+    .safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ code: "invalid_body", message: parsed.error.message });
+    return;
+  }
+  const settings = await updatePantrySettings(parsed.data);
+  res.json(settings);
+});
+
+adminRouter.put("/patrons/:userId/cap", async (req, res) => {
+  const parsed = z
+    .object({
+      patronCap: z.number().int().min(1).max(50).nullable(),
+      isPantrySeller: z.boolean().optional(),
+      pantryBlocked: z.boolean().optional(),
+    })
+    .safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ code: "invalid_body", message: parsed.error.message });
+    return;
+  }
+  const userId = String(req.params.userId ?? "");
+  let profile = getDb().profiles.find(p => p.userId === userId);
+  if (!profile) {
+    res.status(404).json({ code: "not_found", message: "Profile not found." });
+    return;
+  }
+  await mutateDb(db => {
+    const p = db.profiles.find(x => x.userId === userId)!;
+    if (parsed.data.patronCap !== undefined) p.patronCap = parsed.data.patronCap;
+    if (parsed.data.isPantrySeller !== undefined) {
+      p.isPantrySeller = parsed.data.isPantrySeller;
+    }
+    if (parsed.data.pantryBlocked !== undefined) {
+      p.pantryBlocked = parsed.data.pantryBlocked;
+    }
+    p.updatedAt = new Date().toISOString();
+    profile = p;
+  });
+  res.json({
+    profile,
+    allocation: getPatronAllocation(userId),
+  });
+});
+
+adminRouter.get("/patrons", async (_req, res) => {
+  await refreshDb();
+  const db = getDb();
+  const patrons = db.profiles
+    .filter(p => p.roles.includes("buyer") || p.roles.includes("seller"))
+    .map(p => {
+      const userOrders = db.orders.filter(
+        o => o.buyerUserId === p.userId || o.sellerUserId === p.userId,
+      );
+      const asBuyer = userOrders.filter(o => o.buyerUserId === p.userId);
+      const asSeller = userOrders.filter(o => o.sellerUserId === p.userId);
+      const openStatuses = new Set([
+        "pending_accept",
+        "accepted",
+        "ready_for_pickup",
+      ]);
+      const lastOrderAt =
+        userOrders
+          .map(o => o.updatedAt || o.createdAt)
+          .sort()
+          .at(-1) ?? null;
+      return {
+        ...p,
+        allocation: getPatronAllocation(p.userId),
+        activity: {
+          ordersAsBuyer: asBuyer.length,
+          ordersAsSeller: asSeller.length,
+          openAsBuyer: asBuyer.filter(o => openStatuses.has(o.status)).length,
+          completedAsBuyer: asBuyer.filter(o => o.status === "completed").length,
+          lastOrderAt,
+        },
+      };
+    })
+    .sort((a, b) => {
+      const an = (a.name || a.email || a.userId).toLowerCase();
+      const bn = (b.name || b.email || b.userId).toLowerCase();
+      return an.localeCompare(bn);
+    });
+  res.json({ count: patrons.length, data: patrons });
+});
+
+adminRouter.get("/pantry/report", async (_req, res) => {
+  await refreshDb();
+  res.json(buildPantryReport());
+});
+
+adminRouter.get("/pantry/report.csv", async (_req, res) => {
+  await refreshDb();
+  const csv = pantryReportToCsv(buildPantryReport());
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="pantry-report.csv"',
+  );
+  res.send(csv);
+});
+
 function orderWithListing(orderId: string) {
   const order = getDb().orders.find(o => o.id === orderId);
   if (!order) return null;
+  const items = (order.items?.length
+    ? order.items
+    : [{ listingId: order.listingId, quantity: 1, title: "Item" }]
+  ).map(line => ({
+    ...line,
+    listing: getDb().listings.find(l => l.id === line.listingId) ?? null,
+  }));
   return {
     ...order,
+    items,
     listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
   };
 }
@@ -32,10 +161,9 @@ adminRouter.get("/orders/escrow", async (req, res) => {
   await refreshDb();
   const filter =
     typeof req.query.filter === "string" ? req.query.filter : "attention";
-  const data = listEscrowAttentionOrders(filter).map(o => ({
-    ...o,
-    listing: getDb().listings.find(l => l.id === o.listingId) ?? null,
-  }));
+  const data = listEscrowAttentionOrders(filter).map(o =>
+    orderWithListing(o.id)!,
+  );
   res.json({ filter, count: data.length, data });
 });
 
@@ -52,10 +180,7 @@ adminRouter.get("/orders", async (req, res) => {
     orders = orders.filter(o => o.status === status);
   }
   orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const data = orders.map(o => ({
-    ...o,
-    listing: getDb().listings.find(l => l.id === o.listingId) ?? null,
-  }));
+  const data = orders.map(o => orderWithListing(o.id)!);
   res.json({ status, count: data.length, data });
 });
 

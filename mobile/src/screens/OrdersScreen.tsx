@@ -19,7 +19,11 @@ import type { OrdersStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<OrdersStackParamList, "OrdersHome">;
 
-type StatusBucket = "placed" | "accepted" | "ready_for_pickup" | "completed";
+type StatusBucket =
+  | "placed"
+  | "accepted"
+  | "ready_for_pickup"
+  | "completed";
 
 const STATUS_BUCKETS: {
   id: StatusBucket;
@@ -58,23 +62,55 @@ const STATUS_BUCKETS: {
   },
 ];
 
+function isDropOffOverdue(order: Order): boolean {
+  if (order.status !== "accepted" || !order.sellerDropOffDeadlineAt) return false;
+  return Date.parse(order.sellerDropOffDeadlineAt) < Date.now();
+}
+
 function statusLabel(order: Order): string {
+  const pantryOrder = order.priceCents === 0;
   switch (order.status) {
     case "pending_accept":
-      return "Waiting for seller";
+      return pantryOrder ? "Placed — waiting for pantry" : "Waiting for seller";
     case "accepted":
-      return "Accepted — drop-off needed";
+      return pantryOrder
+        ? "Accepted — pantry drop-off needed"
+        : "Accepted — drop-off needed";
     case "ready_for_pickup":
       return "Ready for pickup";
     case "completed":
-      return order.completedReason === "no_show"
-        ? "Completed — buyer no-show (paid to seller)"
-        : "Completed";
+      if (order.completedReason === "no_show") {
+        return pantryOrder
+          ? "Completed — no-show"
+          : "Completed — buyer no-show (paid to seller)";
+      }
+      return "Completed";
     case "cancelled":
       return "Cancelled";
     default:
       return order.status;
   }
+}
+
+function orderLines(order: Order) {
+  if (order.items && order.items.length > 0) return order.items;
+  return [
+    {
+      listingId: order.listingId,
+      quantity: 1,
+      title: order.listing?.title ?? "Listing",
+      listing: order.listing,
+    },
+  ];
+}
+
+function orderTitle(order: Order): string {
+  const lines = orderLines(order);
+  if (lines.length === 1) {
+    return lines[0]!.listing?.title ?? lines[0]!.title ?? "Listing";
+  }
+  const units = lines.reduce((s, l) => s + l.quantity, 0);
+  return `Basket · ${lines.length} items (${units} units)`;
 }
 
 export function OrdersScreen({ navigation }: Props) {
@@ -88,6 +124,7 @@ export function OrdersScreen({ navigation }: Props) {
     refresh,
     refreshing,
     showPrices,
+    pantryMode,
   } = useMarketplace();
 
   const isBuyer = profile?.roles.includes("buyer") ?? false;
@@ -150,7 +187,7 @@ export function OrdersScreen({ navigation }: Props) {
         { text: "Cancel", style: "cancel" },
         {
           text: "Submit",
-          onPress: reason => {
+          onPress: (reason: string | undefined) => {
             const text = (reason ?? "").trim();
             if (text.length < 8) {
               Alert.alert("Need more detail", "Use at least 8 characters.");
@@ -174,6 +211,7 @@ export function OrdersScreen({ navigation }: Props) {
   }
 
   function canDispute(order: Order): boolean {
+    if (pantryMode || order.priceCents === 0) return false;
     if (order.platformDisputeOpenedAt || order.paymentStatus === "disputed") {
       return false;
     }
@@ -190,7 +228,9 @@ export function OrdersScreen({ navigation }: Props) {
         <View style={styles.tabs}>
           <Pressable
             style={[styles.tab, roleTab === "buying" && styles.tabOn]}
-            onPress={() => setTab("buying")}>
+            onPress={() => {
+              setTab("buying");
+            }}>
             <Text
               style={[
                 styles.tabText,
@@ -201,7 +241,9 @@ export function OrdersScreen({ navigation }: Props) {
           </Pressable>
           <Pressable
             style={[styles.tab, roleTab === "selling" && styles.tabOn]}
-            onPress={() => setTab("selling")}>
+            onPress={() => {
+              setTab("selling");
+            }}>
             <Text
               style={[
                 styles.tabText,
@@ -260,14 +302,22 @@ export function OrdersScreen({ navigation }: Props) {
           const isSeller = roleTab === "selling";
           return (
             <View style={styles.card}>
-              <Text style={styles.title}>
-                {item.listing?.title ?? "Listing"}
-              </Text>
+              <Text style={styles.title}>{orderTitle(item)}</Text>
+              {orderLines(item).length > 1
+                ? orderLines(item).map(line => (
+                    <Text key={line.listingId} style={styles.meta}>
+                      {line.quantity}× {line.listing?.title ?? line.title}
+                    </Text>
+                  ))
+                : null}
               <Text style={styles.meta}>
                 {showPrices
                   ? `$${(item.priceCents / 100).toFixed(2)} · `
                   : ""}
                 {statusLabel(item)}
+                {isSeller && isDropOffOverdue(item) ? (
+                  <Text style={styles.overdue}> Overdue</Text>
+                ) : null}
               </Text>
               {item.exchangeZoneName ? (
                 <Text style={styles.meta}>
@@ -280,9 +330,11 @@ export function OrdersScreen({ navigation }: Props) {
               {item.status === "ready_for_pickup" && item.pickupLinkExpiresAt ? (
                 <Text style={styles.meta}>
                   Pick up by {new Date(item.pickupLinkExpiresAt).toLocaleString()}
-                  {showPrices
+                  {showPrices && item.priceCents > 0
                     ? " — after that, escrow releases to the seller"
-                    : ""}
+                    : pantryMode || item.priceCents === 0
+                      ? " — after that the order may close as a no-show"
+                      : ""}
                 </Text>
               ) : null}
 
@@ -312,8 +364,10 @@ export function OrdersScreen({ navigation }: Props) {
                 </View>
               ) : null}
 
-              {item.platformDisputeOpenedAt ||
-              item.paymentStatus === "disputed" ? (
+              {(item.platformDisputeOpenedAt ||
+                item.paymentStatus === "disputed") &&
+              item.priceCents > 0 &&
+              !pantryMode ? (
                 <Text style={styles.disputeBanner}>
                   Dispute open
                   {item.platformDisputeReason
@@ -338,7 +392,11 @@ export function OrdersScreen({ navigation }: Props) {
                     onPress={() =>
                       navigation.navigate("DropOff", { orderId: item.id })
                     }>
-                    <Text style={styles.primaryText}>Drop off item</Text>
+                    <Text style={styles.primaryText}>
+                      {item.priceCents === 0
+                        ? "Drop off basket"
+                        : "Drop off item"}
+                    </Text>
                   </Pressable>
                 ) : null}
 
@@ -462,6 +520,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: "#5c6370",
     fontSize: 13,
+  },
+  overdue: {
+    color: "#9a3412",
+    fontWeight: "700",
   },
   disputeBanner: {
     marginTop: 10,

@@ -5,6 +5,7 @@ export type ListingStatus =
   | "available"
   | "reserved"
   | "sold"
+  | "out_of_stock"
   | "cancelled";
 
 export type OrderStatus =
@@ -35,6 +36,11 @@ export interface UserProfile {
   bio: string;
   stripeAccountId?: string | null;
   stripePayoutsReady?: boolean;
+  patronCap?: number | null;
+  isPantrySeller?: boolean;
+  pantryBlocked?: boolean;
+  adminOptOut?: boolean;
+  adminEligible?: boolean;
 }
 
 export interface Listing {
@@ -51,13 +57,23 @@ export interface Listing {
   status: ListingStatus;
   imageColor: string;
   imageUrl?: string | null;
+  stockQty?: number;
+  maxPerOrder?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OrderItem {
+  listingId: string;
+  quantity: number;
+  title: string;
+  listing?: Listing | null;
 }
 
 export interface Order {
   id: string;
   listingId: string;
+  items?: OrderItem[];
   buyerUserId: string;
   sellerUserId: string;
   priceCents: number;
@@ -109,6 +125,8 @@ export interface CreateListingInput {
   condition?: ItemCondition;
   locationLabel?: string;
   imageUrl?: string | null;
+  stockQty?: number;
+  maxPerOrder?: number;
 }
 
 export interface CheckoutExchangeZone {

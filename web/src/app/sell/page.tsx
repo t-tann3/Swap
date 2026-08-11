@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 
 import { ListingCard } from "../../components/ListingCard";
 import { useMarketplace } from "../../context/MarketplaceContext";
@@ -12,15 +13,20 @@ import {
 import { fileToBase64, mediaUrl } from "../../lib/media";
 
 export default function SellPage() {
-  const { profile, myListings, createListing, showPrices } = useMarketplace();
+  const { profile, myListings, createListing, showPrices, pantryMode } =
+    useMarketplace();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+  const [stockQty, setStockQty] = useState("1");
+  const [maxPerOrder, setMaxPerOrder] = useState("1");
   const [category, setCategory] = useState<ListingCategory>("General");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [barcode, setBarcode] = useState("");
+  const [lookupBusy, setLookupBusy] = useState(false);
 
   if (!profile?.roles.includes("seller")) {
     return (
@@ -52,18 +58,57 @@ export default function SellPage() {
     }
   }
 
+  async function onBarcodeLookup() {
+    const code = barcode.replace(/\D/g, "");
+    if (code.length < 8) {
+      setMessage("Enter an 8–14 digit barcode (UPC/EAN).");
+      return;
+    }
+    setLookupBusy(true);
+    setMessage(null);
+    try {
+      const product = await apiRequest<{
+        title: string;
+        description: string;
+        category: ListingCategory;
+        imageUrl: string | null;
+        barcode: string;
+      }>(`/api/products/barcode/${encodeURIComponent(code)}`, { auth: true });
+      setTitle(product.title);
+      setDescription(product.description);
+      setCategory(product.category);
+      if (product.imageUrl) setImageUrl(product.imageUrl);
+      setMessage(
+        `Filled from barcode ${product.barcode}. Set stock and list food.`,
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Barcode lookup failed");
+    } finally {
+      setLookupBusy(false);
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     const dollars = showPrices ? Number.parseFloat(price) : 0;
+    const stock = pantryMode ? Number.parseInt(stockQty, 10) : 1;
+    const itemCap = pantryMode ? Number.parseInt(maxPerOrder, 10) : 1;
     if (
       !title.trim() ||
       !description.trim() ||
-      (showPrices && Number.isNaN(dollars))
+      (showPrices && Number.isNaN(dollars)) ||
+      (pantryMode &&
+        (!Number.isFinite(stock) ||
+          stock < 1 ||
+          !Number.isFinite(itemCap) ||
+          itemCap < 1))
     ) {
       setMessage(
         showPrices
           ? "Add a title, description, and valid price."
-          : "Add a title and description.",
+          : pantryMode
+            ? "Add a title, description, stock, and per-patron item cap."
+            : "Add a title and description.",
       );
       return;
     }
@@ -78,13 +123,17 @@ export default function SellPage() {
         condition: "good",
         locationLabel: "Local Exchange Zone",
         imageUrl,
+        stockQty: pantryMode ? stock : 1,
+        maxPerOrder: pantryMode ? itemCap : 1,
       });
       setTitle("");
       setDescription("");
       setPrice("");
+      setStockQty("1");
+      setMaxPerOrder("1");
       setCategory("General");
       setImageUrl(null);
-      setMessage("Listing posted.");
+      setMessage(pantryMode ? "Food listed for pantry." : "Listing posted.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not post");
     } finally {
@@ -97,11 +146,42 @@ export default function SellPage() {
   return (
     <div className="grid gap-8 lg:grid-cols-2">
       <form onSubmit={onSubmit} className="rounded-2xl bg-white p-5 shadow-sm">
-        <h1 className="text-2xl font-bold">Post an item</h1>
+        <h1 className="text-2xl font-bold">
+          {pantryMode ? "Stock pantry food" : "Post an item"}
+        </h1>
         <p className="mt-2 text-sm text-zinc-600">
-          Items must fit a Relai Exchange Zone compartment. All doors are the
-          same size. A listing photo is optional.
+          {pantryMode
+            ? "Look up a barcode to fill title and catalog photo, then set stock."
+            : "Items must fit a Relai Exchange Zone compartment. All doors are the same size. A listing photo is optional."}
         </p>
+        {pantryMode ? (
+          <p className="mt-2 text-sm">
+            <Link href="/inventory" className="font-semibold text-zinc-900 underline">
+              Open inventory
+            </Link>{" "}
+            to see available vs reserved and adjust stock.
+          </p>
+        ) : null}
+        {pantryMode ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="Barcode (UPC/EAN)"
+              value={barcode}
+              onChange={e => setBarcode(e.target.value)}
+              className="min-w-[12rem] flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              disabled={lookupBusy || busy}
+              onClick={() => void onBarcodeLookup()}
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {lookupBusy ? "Looking up…" : "Look up"}
+            </button>
+          </div>
+        ) : null}
         <div className="mt-4 space-y-3">
           <div>
             <p className="mb-2 text-sm font-semibold">Photo (optional)</p>
@@ -153,6 +233,39 @@ export default function SellPage() {
               value={price}
               onChange={e => setPrice(e.target.value)}
             />
+          ) : null}
+          {pantryMode ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-semibold">
+                Stock on shelf
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 px-4 py-3 font-normal"
+                  value={stockQty}
+                  onChange={e => setStockQty(e.target.value)}
+                />
+                <span className="mt-1 block text-xs font-normal text-zinc-500">
+                  How many units you have available.
+                </span>
+              </label>
+              <label className="block text-sm font-semibold">
+                Max per patron (this item)
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 px-4 py-3 font-normal"
+                  value={maxPerOrder}
+                  onChange={e => setMaxPerOrder(e.target.value)}
+                />
+                <span className="mt-1 block text-xs font-normal text-zinc-500">
+                  Cap for this food in one basket (separate from the Admin
+                  total-unit patron cap).
+                </span>
+              </label>
+            </div>
           ) : null}
           <div>
             <p className="mb-2 text-sm font-semibold">Category</p>

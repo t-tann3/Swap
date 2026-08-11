@@ -9,6 +9,13 @@ function baseOrder(overrides: Partial<Order> = {}): Order {
   return {
     id: "ord_test",
     listingId: "lst_1",
+    items: [
+      {
+        listingId: "lst_1",
+        quantity: 1,
+        title: "Test",
+      },
+    ],
     buyerUserId: "buyer_1",
     sellerUserId: "seller_1",
     priceCents: 2500,

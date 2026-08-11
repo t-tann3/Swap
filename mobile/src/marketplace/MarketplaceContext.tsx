@@ -31,6 +31,8 @@ interface MarketplaceContextValue {
   paymentsEnabled: boolean;
   /** Hide dollar amounts in the UI when commerce is off. */
   showPrices: boolean;
+  pantryMode: boolean;
+  defaultPatronCap: number;
   ready: boolean;
   refreshing: boolean;
   searchQuery: string;
@@ -38,7 +40,11 @@ interface MarketplaceContextValue {
   selectedCategory: string;
   setSelectedCategory: (c: string) => void;
   refresh: () => Promise<void>;
-  setRoles: (roles: MarketplaceRole[], bio?: string) => Promise<void>;
+  setRoles: (
+    roles: MarketplaceRole[],
+    bio?: string,
+    adminEnabled?: boolean,
+  ) => Promise<void>;
   createListing: (input: CreateListingInput) => Promise<Listing>;
   updateListing: (
     id: string,
@@ -78,6 +84,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [showPrices, setShowPrices] = useState(false);
+  const [pantryMode, setPantryMode] = useState(false);
+  const [defaultPatronCap, setDefaultPatronCap] = useState(5);
 
   const refresh = useCallback(async () => {
     if (status !== "signedIn" || !me) return;
@@ -112,9 +120,12 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
         apiRequest<{ data: Order[] }>("/api/orders?as=seller", {
           auth: true,
         }),
-        apiRequest<{ enabled: boolean; showPrices?: boolean }>(
-          "/api/payments/config",
-        ),
+        apiRequest<{
+          enabled: boolean;
+          showPrices?: boolean;
+          pantryMode?: boolean;
+          defaultPatronCap?: number;
+        }>("/api/payments/config"),
       ]);
 
       setProfile({
@@ -123,6 +134,10 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
         name: profileRes.name,
         roles: profileRes.roles ?? [],
         bio: profileRes.bio ?? "",
+        patronCap: profileRes.patronCap ?? null,
+        isPantrySeller: profileRes.isPantrySeller ?? false,
+        adminOptOut: profileRes.adminOptOut ?? false,
+        adminEligible: profileRes.adminEligible ?? false,
       });
       setListings(listingsRes.data);
       setMyListingsState(mineRes.data.filter(l => l.status !== "cancelled"));
@@ -132,6 +147,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       setOrdersAsSeller(sellOrders.data);
       setPaymentsEnabled(payCfg.enabled);
       setShowPrices(payCfg.showPrices ?? payCfg.enabled);
+      setPantryMode(Boolean(payCfg.pantryMode));
+      setDefaultPatronCap(payCfg.defaultPatronCap ?? 5);
     } finally {
       setRefreshing(false);
       setReady(true);
@@ -159,12 +176,14 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
   }, [me, status, refresh]);
 
   const setRoles = useCallback(
-    async (roles: MarketplaceRole[], bio?: string) => {
+    async (roles: MarketplaceRole[], bio?: string, adminEnabled?: boolean) => {
       const selfServe = roles.filter(r => r === "buyer" || r === "seller");
+      const body: Record<string, unknown> = { roles: selfServe, bio };
+      if (adminEnabled !== undefined) body.adminEnabled = adminEnabled;
       const next = await apiRequest<UserProfile>("/api/me/profile", {
         method: "PUT",
         auth: true,
-        body: JSON.stringify({ roles: selfServe, bio }),
+        body: JSON.stringify(body),
       });
       setProfile({
         userId: next.userId,
@@ -172,6 +191,10 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
         name: next.name,
         roles: next.roles,
         bio: next.bio ?? "",
+        patronCap: next.patronCap ?? null,
+        isPantrySeller: next.isPantrySeller ?? false,
+        adminOptOut: next.adminOptOut ?? false,
+        adminEligible: next.adminEligible ?? false,
       });
     },
     [],
@@ -338,6 +361,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       categories,
       paymentsEnabled,
       showPrices,
+      pantryMode,
+      defaultPatronCap,
       ready,
       refreshing,
       searchQuery,
@@ -370,6 +395,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       categories,
       paymentsEnabled,
       showPrices,
+      pantryMode,
+      defaultPatronCap,
       ready,
       refreshing,
       searchQuery,

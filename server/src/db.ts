@@ -2,7 +2,17 @@ import { MongoClient, type Db as MongoDb, type AnyBulkWriteOperation } from "mon
 
 import { createSeedDatabase } from "./seed.js";
 import { log } from "./logger.js";
-import type { Database, Favorite, Listing, Order, Profile } from "./types.js";
+import { DEFAULT_PATRON_CAP, defaultPantrySettings } from "./pantry.js";
+import type {
+  Basket,
+  Database,
+  Favorite,
+  Listing,
+  Order,
+  PantrySettings,
+  Profile,
+  StockAdjustment,
+} from "./types.js";
 
 const DB_NAME = process.env.MONGODB_DB_NAME?.trim() || "swap";
 
@@ -28,15 +38,30 @@ function migrateDb(current: Database): Database {
     const p = profile as Profile;
     if (p.stripeAccountId === undefined) p.stripeAccountId = null;
     if (p.stripePayoutsReady === undefined) p.stripePayoutsReady = false;
+    if (p.patronCap === undefined) p.patronCap = null;
+    if (p.isPantrySeller === undefined) p.isPantrySeller = false;
+    if (p.pantryBlocked === undefined) p.pantryBlocked = false;
+    if (p.adminOptOut === undefined) p.adminOptOut = false;
   }
   for (const listing of current.listings) {
     const l = listing as Listing & { compartmentSize?: unknown };
     delete l.compartmentSize;
     if (l.imageUrl === undefined) l.imageUrl = null;
+    if (l.stockQty === undefined) l.stockQty = 1;
+    if (l.maxPerOrder === undefined) l.maxPerOrder = 1;
   }
   for (const order of current.orders) {
     const o = order as Order & { compartmentSize?: unknown };
     delete o.compartmentSize;
+    if (!Array.isArray(o.items) || o.items.length === 0) {
+      o.items = [
+        {
+          listingId: o.listingId,
+          quantity: 1,
+          title: "Item",
+        },
+      ];
+    }
     if (o.dropOffPhotoUrl === undefined) o.dropOffPhotoUrl = null;
     if (o.stripePaymentIntentId === undefined) o.stripePaymentIntentId = null;
     if (o.stripeTransferId === undefined) o.stripeTransferId = null;
@@ -64,6 +89,46 @@ function migrateDb(current: Database): Database {
     }
     if (o.cancelledReason === undefined) o.cancelledReason = null;
   }
+  if (!Array.isArray(current.baskets)) {
+    current.baskets = [];
+  }
+  if (!current.pantrySettings) {
+    current.pantrySettings = defaultPantrySettings();
+  } else {
+    const ps = current.pantrySettings as PantrySettings & {
+      autoAcceptOrders?: boolean;
+    };
+    delete ps.autoAcceptOrders;
+    if (ps.hardReserveEnabled === undefined) ps.hardReserveEnabled = true;
+    if (ps.defaultPatronCap === undefined) {
+      ps.defaultPatronCap = DEFAULT_PATRON_CAP;
+    }
+    if (ps.basketHoldTtlMinutes === undefined) {
+      ps.basketHoldTtlMinutes = 120;
+    }
+    if (ps.lowStockThreshold === undefined) {
+      ps.lowStockThreshold = 3;
+    }
+  }
+  if (!Array.isArray(current.stockAdjustments)) {
+    current.stockAdjustments = [];
+  }
+  // One-time: legacy baskets soft-held stock. Clear them before hard-reserve
+  // so checkout does not skip a consume that was never performed.
+  if (!current.pantrySettings.hardReserveEnabled) {
+    const ts = new Date().toISOString();
+    for (const basket of current.baskets) {
+      if (basket.items.length > 0) {
+        basket.items = [];
+        basket.updatedAt = ts;
+      }
+    }
+    current.pantrySettings = {
+      ...current.pantrySettings,
+      hardReserveEnabled: true,
+      updatedAt: ts,
+    };
+  }
   if (!Array.isArray(current.processedStripeEvents)) {
     current.processedStripeEvents = [];
   }
@@ -80,21 +145,41 @@ function stripMongoId<T extends object>(doc: T): T {
 }
 
 async function loadFromMongo(database: MongoDb): Promise<Database | null> {
-  const [profiles, listings, orders, favorites, stripeEvents, relaiEvents] =
-    await Promise.all([
-      database.collection("profiles").find({}).toArray(),
-      database.collection("listings").find({}).toArray(),
-      database.collection("orders").find({}).toArray(),
-      database.collection("favorites").find({}).toArray(),
-      database.collection("processedStripeEvents").find({}).toArray(),
-      database.collection("processedRelaiEvents").find({}).toArray(),
-    ]);
+  const [
+    profiles,
+    listings,
+    orders,
+    favorites,
+    baskets,
+    pantrySettingsDocs,
+    stockAdjustments,
+    stripeEvents,
+    relaiEvents,
+  ] = await Promise.all([
+    database.collection("profiles").find({}).toArray(),
+    database.collection("listings").find({}).toArray(),
+    database.collection("orders").find({}).toArray(),
+    database.collection("favorites").find({}).toArray(),
+    database.collection("baskets").find({}).toArray(),
+    database.collection("pantrySettings").find({}).toArray(),
+    database.collection("stockAdjustments").find({}).toArray(),
+    database.collection("processedStripeEvents").find({}).toArray(),
+    database.collection("processedRelaiEvents").find({}).toArray(),
+  ]);
 
+  const pantryDoc = pantrySettingsDocs[0] as PantrySettings | undefined;
   const loaded: Database = {
     profiles: profiles.map(d => stripMongoId(d as unknown as Profile)),
     listings: listings.map(d => stripMongoId(d as unknown as Listing)),
     orders: orders.map(d => stripMongoId(d as unknown as Order)),
     favorites: favorites.map(d => stripMongoId(d as unknown as Favorite)),
+    baskets: baskets.map(d => stripMongoId(d as unknown as Basket)),
+    pantrySettings: pantryDoc
+      ? stripMongoId(pantryDoc)
+      : defaultPantrySettings(),
+    stockAdjustments: stockAdjustments.map(d =>
+      stripMongoId(d as unknown as StockAdjustment),
+    ),
     processedStripeEvents: stripeEvents.map(e => String(e._id)),
     processedRelaiEvents: relaiEvents.map(e => String(e._id)),
   };
@@ -160,6 +245,27 @@ async function persistToMongo(current: Database): Promise<void> {
       "favorites",
       current.favorites as unknown as Record<string, unknown>[],
       f => `${f.userId}:${f.listingId}`,
+    ),
+    syncKeyedCollection(
+      database,
+      "baskets",
+      (current.baskets ?? []) as unknown as Record<string, unknown>[],
+      b => String(b.userId),
+    ),
+    syncKeyedCollection(
+      database,
+      "pantrySettings",
+      [current.pantrySettings ?? defaultPantrySettings()] as unknown as Record<
+        string,
+        unknown
+      >[],
+      s => String(s.id ?? "default"),
+    ),
+    syncKeyedCollection(
+      database,
+      "stockAdjustments",
+      (current.stockAdjustments ?? []) as unknown as Record<string, unknown>[],
+      a => String(a.id),
     ),
     syncKeyedCollection(
       database,

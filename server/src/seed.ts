@@ -12,9 +12,11 @@ const SEED_SELLER = {
 };
 
 function listing(
-  partial: Omit<Listing, "sellerUserId" | "sellerEmail" | "sellerName" | "createdAt" | "updatedAt" | "status" | "imageUrl"> & {
+  partial: Omit<Listing, "sellerUserId" | "sellerEmail" | "sellerName" | "createdAt" | "updatedAt" | "status" | "imageUrl" | "stockQty" | "maxPerOrder"> & {
     status?: Listing["status"];
     imageUrl?: string | null;
+    stockQty?: number;
+    maxPerOrder?: number;
   },
 ): Listing {
   const ts = now();
@@ -24,6 +26,8 @@ function listing(
     sellerName: SEED_SELLER.name,
     status: partial.status ?? "available",
     imageUrl: partial.imageUrl ?? null,
+    stockQty: partial.stockQty ?? 1,
+    maxPerOrder: partial.maxPerOrder ?? 1,
     createdAt: ts,
     updatedAt: ts,
     ...partial,
@@ -42,6 +46,10 @@ export function createSeedDatabase(): Database {
         bio: "Demo seller stocking sample marketplace inventory.",
         stripeAccountId: null,
         stripePayoutsReady: false,
+        patronCap: null,
+        isPantrySeller: true,
+        pantryBlocked: false,
+        adminOptOut: false,
         createdAt: ts,
         updatedAt: ts,
       },
@@ -131,6 +139,17 @@ export function createSeedDatabase(): Database {
     ],
     orders: [],
     favorites: [],
+    baskets: [],
+    pantrySettings: {
+      id: "default",
+      enabled: false,
+      defaultPatronCap: 5,
+      hardReserveEnabled: true,
+      basketHoldTtlMinutes: 120,
+      lowStockThreshold: 3,
+      updatedAt: ts,
+    },
+    stockAdjustments: [],
     processedStripeEvents: [],
     processedRelaiEvents: [],
   };

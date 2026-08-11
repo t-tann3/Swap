@@ -7,7 +7,11 @@ import { useMarketplace } from "../../context/MarketplaceContext";
 import { mediaUrl } from "../../lib/media";
 import type { Order } from "../../lib/types";
 
-type StatusBucket = "placed" | "accepted" | "ready_for_pickup" | "completed";
+type StatusBucket =
+  | "placed"
+  | "accepted"
+  | "ready_for_pickup"
+  | "completed";
 
 const STATUS_BUCKETS: {
   id: StatusBucket;
@@ -46,23 +50,55 @@ const STATUS_BUCKETS: {
   },
 ];
 
+function isDropOffOverdue(order: Order): boolean {
+  if (order.status !== "accepted" || !order.sellerDropOffDeadlineAt) return false;
+  return Date.parse(order.sellerDropOffDeadlineAt) < Date.now();
+}
+
 function statusLabel(order: Order): string {
+  const pantryOrder = order.priceCents === 0;
   switch (order.status) {
     case "pending_accept":
-      return "Waiting for seller";
+      return pantryOrder ? "Placed — waiting for pantry" : "Waiting for seller";
     case "accepted":
-      return "Accepted — drop-off needed";
+      return pantryOrder
+        ? "Accepted — pantry drop-off needed"
+        : "Accepted — drop-off needed";
     case "ready_for_pickup":
       return "Ready for pickup";
     case "completed":
-      return order.completedReason === "no_show"
-        ? "Completed — buyer no-show (paid to seller)"
-        : "Completed";
+      if (order.completedReason === "no_show") {
+        return pantryOrder
+          ? "Completed — no-show"
+          : "Completed — buyer no-show (paid to seller)";
+      }
+      return "Completed";
     case "cancelled":
       return "Cancelled";
     default:
       return order.status;
   }
+}
+
+function orderLines(order: Order) {
+  if (order.items && order.items.length > 0) return order.items;
+  return [
+    {
+      listingId: order.listingId,
+      quantity: 1,
+      title: order.listing?.title ?? "Listing",
+      listing: order.listing,
+    },
+  ];
+}
+
+function orderTitle(order: Order): string {
+  const lines = orderLines(order);
+  if (lines.length === 1) {
+    return lines[0]!.listing?.title ?? lines[0]!.title ?? "Listing";
+  }
+  const units = lines.reduce((s, l) => s + l.quantity, 0);
+  return `Basket · ${lines.length} items (${units} units)`;
 }
 
 export default function OrdersPage() {
@@ -74,6 +110,7 @@ export default function OrdersPage() {
     cancelOrder,
     disputeOrder,
     showPrices,
+    pantryMode,
   } = useMarketplace();
   const isBuyer = profile?.roles.includes("buyer") ?? false;
   const isSellerRole = profile?.roles.includes("seller") ?? false;
@@ -137,6 +174,7 @@ export default function OrdersPage() {
   }
 
   function canDispute(order: Order): boolean {
+    if (pantryMode || order.priceCents === 0) return false;
     if (order.platformDisputeOpenedAt || order.paymentStatus === "disputed") {
       return false;
     }
@@ -173,7 +211,7 @@ export default function OrdersPage() {
         </div>
       ) : null}
 
-      <div className="mt-3 flex gap-1.5">
+      <div className="mt-3 flex flex-wrap gap-1.5">
         {STATUS_BUCKETS.map(bucket => {
           const count = roleOrders.filter(o =>
             bucket.statuses.includes(o.status),
@@ -184,7 +222,7 @@ export default function OrdersPage() {
               key={bucket.id}
               type="button"
               onClick={() => setStatusBucket(bucket.id)}
-              className={`flex-1 rounded-full border px-2 py-2 text-center text-xs font-semibold ${
+              className={`rounded-full border px-2.5 py-2 text-center text-xs font-semibold ${
                 on
                   ? "border-blue-600 bg-blue-50 text-blue-700"
                   : "border-zinc-200 bg-white text-zinc-500"
@@ -204,14 +242,26 @@ export default function OrdersPage() {
           const isSeller = roleTab === "selling";
           return (
             <div key={item.id} className="rounded-xl bg-white p-4 shadow-sm">
-              <h2 className="font-semibold">
-                {item.listing?.title ?? "Listing"}
-              </h2>
+              <h2 className="font-semibold">{orderTitle(item)}</h2>
+              {orderLines(item).length > 1 ? (
+                <ul className="mt-2 space-y-1 text-sm text-zinc-600">
+                  {orderLines(item).map(line => (
+                    <li key={line.listingId}>
+                      {line.quantity}× {line.listing?.title ?? line.title}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <p className="mt-1 text-sm text-zinc-500">
                 {showPrices
                   ? `$${(item.priceCents / 100).toFixed(2)} · `
                   : ""}
                 {statusLabel(item)}
+                {isSeller && isDropOffOverdue(item) ? (
+                  <span className="ml-2 font-semibold text-amber-800">
+                    Overdue
+                  </span>
+                ) : null}
               </p>
               {item.exchangeZoneName ? (
                 <p className="mt-1 text-sm text-zinc-500">
@@ -225,9 +275,11 @@ export default function OrdersPage() {
                 <p className="mt-1 text-sm text-zinc-500">
                   Pick up by{" "}
                   {new Date(item.pickupLinkExpiresAt).toLocaleString()}
-                  {showPrices
+                  {showPrices && item.priceCents > 0
                     ? " — after that, escrow releases to the seller"
-                    : ""}
+                    : pantryMode || item.priceCents === 0
+                      ? " — after that the order may close as a no-show"
+                      : ""}
                 </p>
               ) : null}
               {item.status === "ready_for_pickup" && item.pickupLinkCode ? (
@@ -255,8 +307,10 @@ export default function OrdersPage() {
                   />
                 </div>
               ) : null}
-              {item.platformDisputeOpenedAt ||
-              item.paymentStatus === "disputed" ? (
+              {(item.platformDisputeOpenedAt ||
+                item.paymentStatus === "disputed") &&
+              item.priceCents > 0 &&
+              !pantryMode ? (
                 <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
                   Dispute open
                   {item.platformDisputeReason
@@ -282,7 +336,9 @@ export default function OrdersPage() {
                     href={`/orders/${item.id}/drop-off`}
                     className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white"
                   >
-                    Drop off item
+                    {item.priceCents === 0
+                      ? "Drop off basket"
+                      : "Drop off item"}
                   </Link>
                 ) : null}
                 {!isSeller && item.status === "ready_for_pickup" ? (

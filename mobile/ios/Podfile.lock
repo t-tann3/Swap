@@ -1539,6 +1539,28 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-worklets-core (1.6.3):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - React-NativeModulesApple (0.86.2):
     - hermes-engine
     - React-callinvoker
@@ -2135,6 +2157,12 @@ PODS:
     - StripeUICore (= 26.5.0)
   - StripeUICore (26.5.0):
     - StripeCore (= 26.5.0)
+  - VisionCamera (4.7.3):
+    - VisionCamera/Core (= 4.7.3)
+    - VisionCamera/React (= 4.7.3)
+  - VisionCamera/Core (4.7.3)
+  - VisionCamera/React (4.7.3):
+    - React-Core
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -2181,6 +2209,7 @@ DEPENDENCIES:
   - React-mutationobservernativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/mutationobserver`)
   - react-native-image-picker (from `../node_modules/react-native-image-picker`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
+  - react-native-worklets-core (from `../node_modules/react-native-worklets-core`)
   - React-NativeModulesApple (from `../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-networking (from `../node_modules/react-native/ReactCommon/react/networking`)
   - React-oscompat (from `../node_modules/react-native/ReactCommon/oscompat`)
@@ -2219,6 +2248,7 @@ DEPENDENCIES:
   - RNScreens (from `../node_modules/react-native-screens`)
   - RNSVG (from `../node_modules/react-native-svg`)
   - "stripe-react-native (from `../node_modules/@stripe/stripe-react-native`)"
+  - VisionCamera (from `../node_modules/react-native-vision-camera`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 SPEC REPOS:
@@ -2319,6 +2349,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-image-picker"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
+  react-native-worklets-core:
+    :path: "../node_modules/react-native-worklets-core"
   React-NativeModulesApple:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios"
   React-networking:
@@ -2395,6 +2427,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-svg"
   stripe-react-native:
     :path: "../node_modules/@stripe/stripe-react-native"
+  VisionCamera:
+    :path: "../node_modules/react-native-vision-camera"
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
@@ -2441,6 +2475,7 @@ SPEC CHECKSUMS:
   React-mutationobservernativemodule: 6aaa67618b68a616b1293967c20a1dfcc26632a5
   react-native-image-picker: 2146157d5d37a34c2063d1d2ed01081b56d0b87b
   react-native-safe-area-context: b3e671af6f52a4faaf7c1009a7a487bd9b551df0
+  react-native-worklets-core: ac6ca44cc93388211aa7da8977227f9ef8bb1faf
   React-NativeModulesApple: f313ed47b56405d621e12ecda106a72020959ff3
   React-networking: a0686d5a80eddbcd7bb702421fca503a76aacb1a
   React-oscompat: db6675ddaef3bddd1b41533627f3d26ec710c05f
@@ -2488,8 +2523,9 @@ SPEC CHECKSUMS:
   StripePaymentSheet: dbe9a57e2cef4d54630b56511f501d2c355e102d
   StripePaymentsUI: 71c5666d50b62889d5f935f283ba6afb88135533
   StripeUICore: aa5d5a1ff0e8a090078303915a5c14a0bce80a01
+  VisionCamera: 68d40255fa8866e815cbbb063730102d3da276fd
   Yoga: 8cf9dd9fc7761e176a3361b4821d26d11cfbeab1
 
-PODFILE CHECKSUM: b402f84b4d400482da5c288914d0fd04ca3d2336
+PODFILE CHECKSUM: 933176933f8a896334cfc8dd5b58e648f94c9169
 
 COCOAPODS: 1.15.2

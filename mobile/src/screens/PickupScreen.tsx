@@ -130,9 +130,9 @@ export function PickupScreen({ route, navigation }: Props) {
       ) : null}
 
       <Text style={styles.body}>
-        Resolves the open-handoff link and opens the compartment (sandbox
-        simulated transport). Completing pickup releases escrow to the seller.
-        If you miss the deadline, funds still release to the seller as a no-show.
+        {order.priceCents === 0
+          ? "Resolves the open-handoff link and opens the compartment (sandbox simulated transport). Completing pickup finishes the order. If you miss the deadline, the order may close as a no-show."
+          : "Resolves the open-handoff link and opens the compartment (sandbox simulated transport). Completing pickup releases escrow to the seller. If you miss the deadline, funds still release to the seller as a no-show."}
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}

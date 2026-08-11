@@ -13,7 +13,7 @@ export function ListingCard({
   item: Listing;
   href: string;
 }) {
-  const { showPrices } = useMarketplace();
+  const { showPrices, pantryMode } = useMarketplace();
   const photo = mediaUrl(item.imageUrl);
 
   return (
@@ -51,6 +51,17 @@ export function ListingCard({
             {item.condition.replace("_", " ")}
           </span>
         </div>
+        {pantryMode ? (
+          <p className="mt-1 text-xs text-zinc-500">
+            {item.status === "out_of_stock" || (item.stockQty ?? 0) <= 0
+              ? "Out of stock"
+              : `Stock ${item.stockQty ?? 1} · max ${item.maxPerOrder ?? 1}/patron`}
+          </p>
+        ) : item.status !== "available" ? (
+          <p className="mt-1 text-xs capitalize text-zinc-500">
+            {item.status.replace(/_/g, " ")}
+          </p>
+        ) : null}
         <p className="mt-1 line-clamp-2 text-sm text-zinc-600">
           {item.description}
         </p>

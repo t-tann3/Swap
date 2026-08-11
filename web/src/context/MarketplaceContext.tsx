@@ -32,6 +32,9 @@ interface MarketplaceContextValue {
   paymentsEnabled: boolean;
   /** Hide dollar amounts in the UI when commerce is off. */
   showPrices: boolean;
+  /** Admin-toggled pantry mode (baskets + caps, no seller payouts). */
+  pantryMode: boolean;
+  defaultPatronCap: number;
   ready: boolean;
   refreshing: boolean;
   searchQuery: string;
@@ -39,8 +42,16 @@ interface MarketplaceContextValue {
   selectedCategory: string;
   setSelectedCategory: (c: string) => void;
   refresh: () => Promise<void>;
-  setRoles: (roles: MarketplaceRole[], bio?: string) => Promise<void>;
+  setRoles: (
+    roles: MarketplaceRole[],
+    bio?: string,
+    adminEnabled?: boolean,
+  ) => Promise<void>;
   createListing: (input: CreateListingInput) => Promise<Listing>;
+  updateListing: (
+    id: string,
+    input: Partial<CreateListingInput>,
+  ) => Promise<Listing>;
   deleteListing: (id: string) => Promise<void>;
   buyListing: (
     listingId: string,
@@ -74,6 +85,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [showPrices, setShowPrices] = useState(false);
+  const [pantryMode, setPantryMode] = useState(false);
+  const [defaultPatronCap, setDefaultPatronCap] = useState(5);
 
   const refresh = useCallback(async () => {
     if (status !== "signedIn" || !me) return;
@@ -104,9 +117,12 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
         apiRequest<{ data: Order[] }>("/api/orders?as=seller", {
           auth: true,
         }),
-        apiRequest<{ enabled: boolean; showPrices?: boolean }>(
-          "/api/payments/config",
-        ),
+        apiRequest<{
+          enabled: boolean;
+          showPrices?: boolean;
+          pantryMode?: boolean;
+          defaultPatronCap?: number;
+        }>("/api/payments/config"),
       ]);
 
       setProfile({
@@ -115,6 +131,10 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
         name: profileRes.name,
         roles: profileRes.roles ?? [],
         bio: profileRes.bio ?? "",
+        patronCap: profileRes.patronCap ?? null,
+        isPantrySeller: profileRes.isPantrySeller ?? false,
+        adminOptOut: profileRes.adminOptOut ?? false,
+        adminEligible: profileRes.adminEligible ?? false,
       });
       setListings(listingsRes.data);
       setMyListings(mineRes.data.filter(l => l.status !== "cancelled"));
@@ -123,6 +143,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       setOrdersAsSeller(sellOrders.data);
       setPaymentsEnabled(payCfg.enabled);
       setShowPrices(payCfg.showPrices ?? payCfg.enabled);
+      setPantryMode(Boolean(payCfg.pantryMode));
+      setDefaultPatronCap(payCfg.defaultPatronCap ?? 5);
     } finally {
       setRefreshing(false);
       setReady(true);
@@ -138,27 +160,47 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
     void refresh().catch(() => setReady(true));
   }, [me, status, refresh]);
 
-  const setRoles = useCallback(async (roles: MarketplaceRole[], bio?: string) => {
-    // Admin is allowlist-only; never send it in self-serve role updates.
-    const selfServe = roles.filter(r => r === "buyer" || r === "seller");
-    const next = await apiRequest<UserProfile>("/api/me/profile", {
-      method: "PUT",
-      auth: true,
-      body: JSON.stringify({ roles: selfServe, bio }),
-    });
-    setProfile({
-      userId: next.userId,
-      email: next.email,
-      name: next.name,
-      roles: next.roles,
-      bio: next.bio ?? "",
-    });
-  }, []);
-
+  const setRoles = useCallback(
+    async (roles: MarketplaceRole[], bio?: string, adminEnabled?: boolean) => {
+      const selfServe = roles.filter(r => r === "buyer" || r === "seller");
+      const body: Record<string, unknown> = { roles: selfServe, bio };
+      if (adminEnabled !== undefined) body.adminEnabled = adminEnabled;
+      const next = await apiRequest<UserProfile>("/api/me/profile", {
+        method: "PUT",
+        auth: true,
+        body: JSON.stringify(body),
+      });
+      setProfile({
+        userId: next.userId,
+        email: next.email,
+        name: next.name,
+        roles: next.roles,
+        bio: next.bio ?? "",
+        patronCap: next.patronCap ?? null,
+        isPantrySeller: next.isPantrySeller ?? false,
+        adminOptOut: next.adminOptOut ?? false,
+        adminEligible: next.adminEligible ?? false,
+      });
+    },
+    [],
+  );
   const createListing = useCallback(
     async (input: CreateListingInput) => {
       const listing = await apiRequest<Listing>("/api/listings", {
         method: "POST",
+        auth: true,
+        body: JSON.stringify(input),
+      });
+      await refresh();
+      return listing;
+    },
+    [refresh],
+  );
+
+  const updateListing = useCallback(
+    async (id: string, input: Partial<CreateListingInput>) => {
+      const listing = await apiRequest<Listing>(`/api/listings/${id}`, {
+        method: "PATCH",
         auth: true,
         body: JSON.stringify(input),
       });
@@ -292,6 +334,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       ordersAsSeller,
       paymentsEnabled,
       showPrices,
+      pantryMode,
+      defaultPatronCap,
       ready,
       refreshing,
       searchQuery,
@@ -301,6 +345,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       refresh,
       setRoles,
       createListing,
+      updateListing,
       deleteListing,
       buyListing,
       acceptOrder,
@@ -322,6 +367,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       ordersAsSeller,
       paymentsEnabled,
       showPrices,
+      pantryMode,
+      defaultPatronCap,
       ready,
       refreshing,
       searchQuery,
@@ -329,6 +376,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       refresh,
       setRoles,
       createListing,
+      updateListing,
       deleteListing,
       buyListing,
       acceptOrder,

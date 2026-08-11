@@ -5,6 +5,7 @@ import {
   Heart,
   Home,
   Package,
+  ShoppingBasket,
   Shield,
   Store,
   UserRound,
@@ -16,11 +17,14 @@ import { useAuth } from "../auth/AuthContext";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import { AccountScreen } from "../screens/AccountScreen";
 import { AdminScreen } from "../screens/AdminScreen";
+import { BasketScreen } from "../screens/BasketScreen";
 import { BrowseScreen } from "../screens/BrowseScreen";
 import { CheckoutScreen } from "../screens/CheckoutScreen";
 import { FavoritesScreen } from "../screens/FavoritesScreen";
 import { ListingDetailScreen } from "../screens/ListingDetailScreen";
 import { DropOffScreen } from "../screens/DropOffScreen";
+import { InventoryScreen } from "../screens/InventoryScreen";
+import { BarcodeScanScreen } from "../screens/BarcodeScanScreen";
 import { OrdersScreen } from "../screens/OrdersScreen";
 import { PickupScreen } from "../screens/PickupScreen";
 import { RoleSetupScreen } from "../screens/RoleSetupScreen";
@@ -99,6 +103,16 @@ function SellStackNavigator() {
         options={{ title: "Sell" }}
       />
       <SellStack.Screen
+        name="Inventory"
+        component={InventoryScreen}
+        options={{ title: "Inventory" }}
+      />
+      <SellStack.Screen
+        name="BarcodeScan"
+        component={BarcodeScanScreen}
+        options={{ title: "Scan barcode" }}
+      />
+      <SellStack.Screen
         name="ListingDetail"
         component={ListingDetailScreen}
         options={{ title: "Item" }}
@@ -130,11 +144,10 @@ function OrdersStackNavigator() {
 }
 
 function MainTabs() {
-  const { profile } = useMarketplace();
+  const { profile, pantryMode } = useMarketplace();
   const isBuyer = profile?.roles.includes("buyer") ?? false;
   const isSeller = profile?.roles.includes("seller") ?? false;
   const isAdmin = profile?.roles.includes("admin") ?? false;
-  const isAdminOnly = isAdmin && !isBuyer && !isSeller;
 
   return (
     <Tab.Navigator
@@ -177,6 +190,19 @@ function MainTabs() {
           }}
         />
       ) : null}
+      {isBuyer && pantryMode ? (
+        <Tab.Screen
+          name="BasketTab"
+          component={BasketScreen}
+          options={{
+            title: "Basket",
+            headerShown: true,
+            tabBarIcon: ({ color, size }) => (
+              <ShoppingBasket color={color} size={size} strokeWidth={2.25} />
+            ),
+          }}
+        />
+      ) : null}
       {isSeller ? (
         <Tab.Screen
           name="SellTab"
@@ -189,18 +215,16 @@ function MainTabs() {
           }}
         />
       ) : null}
-      {!isAdminOnly ? (
-        <Tab.Screen
-          name="OrdersTab"
-          component={OrdersStackNavigator}
-          options={{
-            title: "Orders",
-            tabBarIcon: ({ color, size }) => (
-              <Package color={color} size={size} strokeWidth={2.25} />
-            ),
-          }}
-        />
-      ) : null}
+      <Tab.Screen
+        name="OrdersTab"
+        component={OrdersStackNavigator}
+        options={{
+          title: "Orders",
+          tabBarIcon: ({ color, size }) => (
+            <Package color={color} size={size} strokeWidth={2.25} />
+          ),
+        }}
+      />
       {isAdmin ? (
         <Tab.Screen
           name="AdminTab"

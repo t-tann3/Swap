@@ -1,6 +1,12 @@
 import { getDb, mutateDb } from "./db.js";
 import { log } from "./logger.js";
 import {
+  markListingUnitCompleted,
+  orderLineItems,
+  releaseListingUnits,
+  sweepAbandonedBaskets,
+} from "./pantry.js";
+import {
   cancelAuthorizedPayment,
   refundEscrowPayment,
   releasePaymentOnPickup,
@@ -13,6 +19,31 @@ import type {
   Order,
   PickupVerifiedVia,
 } from "./types.js";
+
+function finalizeListingsForOrder(
+  db: { listings: import("./types.js").Listing[] },
+  order: Order,
+  ts: string,
+): void {
+  const seen = new Set<string>();
+  for (const line of orderLineItems(order)) {
+    if (seen.has(line.listingId)) continue;
+    seen.add(line.listingId);
+    const listing = db.listings.find(l => l.id === line.listingId);
+    if (listing) markListingUnitCompleted(listing, ts);
+  }
+}
+
+function restoreListingsForOrder(
+  db: { listings: import("./types.js").Listing[] },
+  order: Order,
+  ts: string,
+): void {
+  for (const line of orderLineItems(order)) {
+    const listing = db.listings.find(l => l.id === line.listingId);
+    if (listing) releaseListingUnits(listing, line.quantity, ts);
+  }
+}
 
 /** Single-process guard against concurrent finalize/refund for the same order. */
 const busyOrders = new Set<string>();
@@ -206,11 +237,7 @@ export async function finalizeOrderEscrow(
       }
       order.updatedAt = ts;
       order.completedAt = order.completedAt ?? ts;
-      const listing = db.listings.find(l => l.id === order!.listingId);
-      if (listing) {
-        listing.status = "sold";
-        listing.updatedAt = ts;
-      }
+      finalizeListingsForOrder(db, order, ts);
     });
     return order!;
   });
@@ -253,11 +280,7 @@ export async function refundOrderEscrow(
       order.stripeRefundId = refund.stripeRefundId;
       order.adminHold = false;
       order.updatedAt = ts;
-      const listing = db.listings.find(l => l.id === order!.listingId);
-      if (listing && (listing.status === "reserved" || listing.status === "sold")) {
-        listing.status = "available";
-        listing.updatedAt = ts;
-      }
+      restoreListingsForOrder(db, order, ts);
     });
     return order!;
   });
@@ -299,11 +322,7 @@ export async function voidPreDropoffEscrow(
           : order.paymentStatus;
       order.adminHold = false;
       order.updatedAt = ts;
-      const listing = db.listings.find(l => l.id === order!.listingId);
-      if (listing && listing.status === "reserved") {
-        listing.status = "available";
-        listing.updatedAt = ts;
-      }
+      restoreListingsForOrder(db, order, ts);
     });
     return order!;
   });
@@ -382,11 +401,7 @@ export async function adminForceRefund(
           }
         }
         order.updatedAt = ts;
-        const listing = db.listings.find(l => l.id === order!.listingId);
-        if (listing && (listing.status === "sold" || listing.status === "reserved")) {
-          listing.status = "available";
-          listing.updatedAt = ts;
-        }
+        restoreListingsForOrder(db, order, ts);
       });
       return order!;
     });
@@ -661,11 +676,13 @@ export async function runAllEscrowSweeps(): Promise<{
   noShow: Awaited<ReturnType<typeof sweepBuyerNoShows>>;
   sellerTimeout: Awaited<ReturnType<typeof sweepSellerTimeouts>>;
   stuckTransfer: Awaited<ReturnType<typeof sweepStuckTransfers>>;
+  abandonedBaskets: Awaited<ReturnType<typeof sweepAbandonedBaskets>>;
 }> {
   const noShow = await sweepBuyerNoShows();
   const sellerTimeout = await sweepSellerTimeouts();
   const stuckTransfer = await sweepStuckTransfers();
-  return { noShow, sellerTimeout, stuckTransfer };
+  const abandonedBaskets = await sweepAbandonedBaskets();
+  return { noShow, sellerTimeout, stuckTransfer, abandonedBaskets };
 }
 
 export function mapStripeDisputeStatus(status: string): DisputeStatus {

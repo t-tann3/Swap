@@ -20,17 +20,12 @@ export default function AccountPage() {
     refresh,
   } = useMarketplace();
   const roles = profile?.roles ?? [];
-  const isAdminOnly =
-    roles.includes("admin") &&
-    !roles.includes("buyer") &&
-    !roles.includes("seller");
-  const [payoutsReady, setPayoutsReady] = useState(false);
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
+  const [payoutsReady, setPayoutsReady] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
   const [connectMsg, setConnectMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isAdminOnly) return;
     void (async () => {
       try {
         const status = await apiRequest<{
@@ -43,10 +38,9 @@ export default function AccountPage() {
         // ignore
       }
     })();
-  }, [profile?.userId, isAdminOnly]);
+  }, [profile?.userId]);
 
   useEffect(() => {
-    if (isAdminOnly) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("connect") === "return" || params.get("connect") === "refresh") {
       setConnectMsg(
@@ -64,7 +58,7 @@ export default function AccountPage() {
         })
         .finally(() => void refresh());
     }
-  }, [refresh, isAdminOnly]);
+  }, [refresh]);
 
   async function toggle(role: "buyer" | "seller") {
     const next = roles.includes(role)
@@ -75,6 +69,18 @@ export default function AccountPage() {
     );
     if (!selfServe.length) return;
     await setRoles(selfServe as MarketplaceRole[]);
+  }
+
+  async function toggleAdmin() {
+    if (!profile?.adminEligible) return;
+    const selfServe = roles.filter(
+      (r): r is "buyer" | "seller" => r === "buyer" || r === "seller",
+    );
+    await setRoles(
+      (selfServe.length ? selfServe : ["buyer", "seller"]) as MarketplaceRole[],
+      undefined,
+      !roles.includes("admin"),
+    );
   }
 
   async function startConnect() {
@@ -106,54 +112,51 @@ export default function AccountPage() {
 
       <h2 className="mt-8 text-lg font-semibold">Roles</h2>
       <div className="mt-3 space-y-2">
-        {isAdminOnly ? (
-          <div className="rounded-xl border-2 border-zinc-900 bg-zinc-50 px-4 py-3">
-            <p className="font-semibold">Admin</p>
-            <p className="mt-1 text-sm text-zinc-600">
-              Operator access only — no buying or selling. View all orders and
-              resolve escrow in the admin console.
-            </p>
-            <Link
-              href="/admin"
-              className="mt-3 inline-block text-sm font-semibold text-zinc-900 underline"
+        {(["buyer", "seller"] as const).map(role => (
+          <button
+            key={role}
+            type="button"
+            onClick={() => void toggle(role)}
+            className={`w-full rounded-xl border-2 px-4 py-3 text-left font-semibold capitalize ${
+              roles.includes(role) ? "border-zinc-900" : "border-zinc-100"
+            }`}
+          >
+            {role}
+          </button>
+        ))}
+        {profile?.adminEligible ? (
+          <div
+            className={`rounded-xl border-2 px-4 py-3 ${
+              roles.includes("admin")
+                ? "border-zinc-900 bg-zinc-50"
+                : "border-zinc-100"
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => void toggleAdmin()}
+              className="w-full text-left"
             >
-              Open admin console
-            </Link>
-          </div>
-        ) : (
-          <>
-            {(["buyer", "seller"] as const).map(role => (
-              <button
-                key={role}
-                type="button"
-                onClick={() => void toggle(role)}
-                className={`w-full rounded-xl border-2 px-4 py-3 text-left font-semibold capitalize ${
-                  roles.includes(role) ? "border-zinc-900" : "border-zinc-100"
-                }`}
-              >
-                {role}
-              </button>
-            ))}
+              <p className="font-semibold">Admin (operator)</p>
+              <p className="mt-1 text-sm text-zinc-600">
+                {roles.includes("admin")
+                  ? "Click to hide Admin nav and ops tools. Buyer/seller stay above."
+                  : "Click to restore Admin nav and ops tools."}
+              </p>
+            </button>
             {roles.includes("admin") ? (
-              <div className="rounded-xl border-2 border-zinc-900 bg-zinc-50 px-4 py-3">
-                <p className="font-semibold">Admin</p>
-                <p className="mt-1 text-sm text-zinc-600">
-                  Granted by Swap operators — resolve disputes and approve
-                  escrow actions.
-                </p>
-                <Link
-                  href="/admin"
-                  className="mt-3 inline-block text-sm font-semibold text-zinc-900 underline"
-                >
-                  Open admin console
-                </Link>
-              </div>
+              <Link
+                href="/admin"
+                className="mt-3 inline-block text-sm font-semibold text-zinc-900 underline"
+              >
+                Open admin console
+              </Link>
             ) : null}
-          </>
-        )}
+          </div>
+        ) : null}
       </div>
 
-      {!isAdminOnly && roles.includes("seller") && paymentsEnabled ? (
+      {roles.includes("seller") && paymentsEnabled ? (
         <div className="mt-8">
           <h2 className="text-lg font-semibold">Seller payouts</h2>
           <p className="mt-2 text-sm text-zinc-600">
@@ -180,17 +183,13 @@ export default function AccountPage() {
         </div>
       ) : null}
 
-      {!isAdminOnly ? (
-        <>
-          <h2 className="mt-8 text-lg font-semibold">Activity</h2>
-          <ul className="mt-2 space-y-1 text-sm text-zinc-700">
-            <li>Purchases: {ordersAsBuyer.length}</li>
-            <li>Sales: {ordersAsSeller.length}</li>
-            <li>Listings: {myListings.length}</li>
-            <li>Favorites: {favorites.length}</li>
-          </ul>
-        </>
-      ) : null}
+      <h2 className="mt-8 text-lg font-semibold">Activity</h2>
+      <ul className="mt-2 space-y-1 text-sm text-zinc-700">
+        <li>Purchases: {ordersAsBuyer.length}</li>
+        <li>Sales: {ordersAsSeller.length}</li>
+        <li>Listings: {myListings.length}</li>
+        <li>Favorites: {favorites.length}</li>
+      </ul>
 
       <button
         type="button"

@@ -6,6 +6,7 @@ export type ListingStatus =
   | "available"
   | "reserved"
   | "sold"
+  | "out_of_stock"
   | "cancelled";
 
 /**
@@ -65,6 +66,20 @@ export interface Profile {
   stripeAccountId: string | null;
   /** True when recipient stripe_transfers capability is active. */
   stripePayoutsReady: boolean;
+  /**
+   * Max food units this patron may hold at once (basket + open orders).
+   * Null = use pantrySettings.defaultPatronCap.
+   */
+  patronCap: number | null;
+  /** Pantry org seller — lists food, never receives Stripe payouts. */
+  isPantrySeller: boolean;
+  /** When true, patron cannot add to basket or checkout pantry orders. */
+  pantryBlocked: boolean;
+  /**
+   * Allowlisted admins can opt out of the admin UI/role without leaving the allowlist.
+   * Cleared when they re-enable admin or are removed from the allowlist.
+   */
+  adminOptOut: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -84,13 +99,76 @@ export interface Listing {
   imageColor: string;
   /** Optional listing photo (`/uploads/…`). */
   imageUrl: string | null;
+  /** Units available when pantry mode is on (1 for classic marketplace). */
+  stockQty: number;
+  /**
+   * Max units of this item a patron may put in one basket.
+   * Enforced with stock and the overall patron cap.
+   */
+  maxPerOrder: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface Order {
+export interface BasketItem {
+  listingId: string;
+  quantity: number;
+  addedAt: string;
+}
+
+export interface Basket {
+  userId: string;
+  items: BasketItem[];
+  updatedAt: string;
+}
+
+/** Platform pantry mode — admin-toggled. */
+export interface PantrySettings {
+  id: "default";
+  /** When true: free handoffs, baskets + caps, sellers skip Stripe payouts. */
+  enabled: boolean;
+  /** Default max units per patron (basket + open pantry orders). */
+  defaultPatronCap: number;
+  /**
+   * Basket lines hard-reserve stock on add. Set by migration after clearing
+   * legacy soft-hold baskets.
+   */
+  hardReserveEnabled: boolean;
+  /** Minutes idle before abandoned baskets release hard holds (0 = off). */
+  basketHoldTtlMinutes: number;
+  /** Available units at or below this flag as low stock. */
+  lowStockThreshold: number;
+  updatedAt: string;
+}
+
+/** Seller stock ledger entry (adjustments with reason). */
+export interface StockAdjustment {
   id: string;
   listingId: string;
+  sellerUserId: string;
+  delta: number;
+  reason: string;
+  previousQty: number;
+  nextQty: number;
+  createdAt: string;
+}
+
+export interface OrderItem {
+  listingId: string;
+  quantity: number;
+  /** Title snapshot at checkout (basket may change later). */
+  title: string;
+}
+
+export interface Order {
+  id: string;
+  /**
+   * Primary listing (first line). Kept for Relai/marketplace compatibility.
+   * Prefer `items` for display and stock.
+   */
+  listingId: string;
+  /** Line items — pantry baskets are one order with many lines. */
+  items: OrderItem[];
   buyerUserId: string;
   sellerUserId: string;
   priceCents: number;
@@ -159,6 +237,9 @@ export interface Database {
   listings: Listing[];
   orders: Order[];
   favorites: Favorite[];
+  baskets: Basket[];
+  pantrySettings: PantrySettings;
+  stockAdjustments: StockAdjustment[];
   /** Recent Stripe webhook event ids (idempotency). */
   processedStripeEvents: string[];
   /** Recent Relai webhook event ids (idempotency). */

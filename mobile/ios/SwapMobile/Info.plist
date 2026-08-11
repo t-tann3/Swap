@@ -36,7 +36,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
 	<key>NSCameraUsageDescription</key>
-	<string>Swap needs the camera to photograph items for listings and to prove drop-off in an Exchange Zone compartment.</string>
+	<string>Swap needs the camera to scan product barcodes for pantry listings, photograph items, and prove drop-off in an Exchange Zone compartment.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Swap needs photo library access so you can attach an existing photo to a listing.</string>
 	<key>RCTNewArchEnabled</key>

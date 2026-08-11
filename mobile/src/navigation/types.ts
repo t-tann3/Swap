@@ -4,8 +4,18 @@ export type BuyerStackParamList = {
   Checkout: { listingId: string };
 };
 
+export type ListingDraft = {
+  title: string;
+  description: string;
+  category: import("../marketplace/categories").ListingCategory;
+  imageUrl: string | null;
+  barcode?: string;
+};
+
 export type SellStackParamList = {
-  SellHome: undefined;
+  SellHome: { draft?: ListingDraft } | undefined;
+  Inventory: undefined;
+  BarcodeScan: undefined;
   ListingDetail: { id: string };
 };
 
@@ -24,6 +34,7 @@ export type OrdersStackParamList = {
 export type RootTabParamList = {
   BrowseTab: undefined;
   FavoritesTab: undefined;
+  BasketTab: undefined;
   SellTab: undefined;
   OrdersTab: undefined;
   AdminTab: undefined;

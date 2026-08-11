@@ -64,6 +64,25 @@ export async function saveUploadFromBase64(input: {
     throw Object.assign(new Error("image_too_large"), { status: 400 });
   }
 
+  return saveUploadFromBuffer(buffer, mime);
+}
+
+/** Persist a raw image buffer as an owned `/uploads/…` path. */
+export async function saveUploadFromBuffer(
+  buffer: Buffer,
+  mimeType: string,
+): Promise<string> {
+  const mime = mimeType.trim().toLowerCase();
+  const ext = MIME_TO_EXT[mime];
+  if (!ext) {
+    throw Object.assign(new Error("unsupported_type"), { status: 400 });
+  }
+  if (!buffer.length) {
+    throw Object.assign(new Error("invalid_image"), { status: 400 });
+  }
+  if (buffer.length > MAX_BYTES) {
+    throw Object.assign(new Error("image_too_large"), { status: 400 });
+  }
   await ensureUploadsDir();
   const filename = `${newId("img")}.${ext}`;
   await writeFile(path.join(uploadsDir, filename), buffer);

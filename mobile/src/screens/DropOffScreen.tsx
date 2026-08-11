@@ -24,7 +24,7 @@ type Props = {
   navigation: { goBack: () => void };
 };
 
-function describeDropOffError(err: unknown): string {
+function describeDropOffError(err: unknown, pantryOrder = false): string {
   if (err instanceof RelaiApiError) {
     if (err.code === "invalid_request") {
       return (
@@ -34,12 +34,12 @@ function describeDropOffError(err: unknown): string {
       );
     }
     if (err.code === "payment_required") {
-      return (
-        "Relai is charging at the door (Relai checkout mode). Swap already " +
-        "authorized the buyer via Stripe escrow — that does not pay Relai. " +
-        "In the Relai portal, set Payment mode to App-managed so compartment " +
-        "opens are not payment-gated, then try drop-off again."
-      );
+      return pantryOrder
+        ? "Relai is charging at the door. In the Relai portal, set Payment mode to App-managed so compartment opens are not payment-gated, then try drop-off again."
+        : "Relai is charging at the door (Relai checkout mode). Swap already " +
+          "authorized the buyer via Stripe escrow — that does not pay Relai. " +
+          "In the Relai portal, set Payment mode to App-managed so compartment " +
+          "opens are not payment-gated, then try drop-off again.";
     }
     if (err.code === "no_node_available") {
       return (
@@ -143,7 +143,7 @@ export function DropOffScreen({ route, navigation }: Props) {
         [{ text: "OK", onPress: () => navigation.goBack() }],
       );
     } catch (err) {
-      setError(describeDropOffError(err));
+      setError(describeDropOffError(err, order.priceCents === 0));
     } finally {
       setBusy(false);
     }
@@ -167,18 +167,43 @@ export function DropOffScreen({ route, navigation }: Props) {
 
   const previewUri = mediaUrl(dropOffPhotoUrl);
 
+  const isPantryBasket = order.priceCents === 0;
+  const lines =
+    order.items && order.items.length > 0
+      ? order.items
+      : [
+          {
+            listingId: order.listingId,
+            quantity: 1,
+            title: order.listing?.title ?? "Item",
+          },
+        ];
+  const headingTitle =
+    isPantryBasket && lines.length > 1
+      ? `Basket · ${lines.length} items`
+      : (lines[0]?.title ?? order.listing?.title ?? "Order");
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.heading}>Drop off</Text>
-      <Text style={styles.title}>{order.listing?.title ?? "Order"}</Text>
+      <Text style={styles.heading}>
+        {isPantryBasket ? "Drop off basket" : "Drop off"}
+      </Text>
+      <Text style={styles.title}>{headingTitle}</Text>
+      {isPantryBasket && lines.length > 1
+        ? lines.map(line => (
+            <Text key={line.listingId} style={styles.meta}>
+              {line.quantity}× {line.title}
+            </Text>
+          ))
+        : null}
       <Text style={styles.meta}>
         Exchange Zone: {order.exchangeZoneName}
         {order.exchangeZoneAddress ? `\n${order.exchangeZoneAddress}` : ""}
       </Text>
       <Text style={styles.body}>
-        Open a compartment and place the item inside. A compartment photo is
-        optional (useful on a real device; the simulator has no camera). Swap
-        attaches the one-time pickup link for the buyer.
+        {isPantryBasket
+          ? "Open a compartment and place the full basket inside. A compartment photo is optional (useful on a real device; the simulator has no camera). Swap attaches the one-time pickup link for the buyer."
+          : "Open a compartment and place the item inside. A compartment photo is optional (useful on a real device; the simulator has no camera). Swap attaches the one-time pickup link for the buyer."}
       </Text>
 
       <Text style={styles.label}>Compartment photo (optional)</Text>

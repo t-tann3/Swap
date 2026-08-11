@@ -12,8 +12,10 @@ import { startEscrowScheduler } from "./escrow.js";
 import { buildHealthReport } from "./health.js";
 import { captureException, log } from "./logger.js";
 import { adminRouter } from "./routes/admin.js";
+import { basketRouter } from "./routes/basket.js";
 import { marketplaceRouter } from "./routes/marketplace.js";
 import { paymentsRouter } from "./routes/payments.js";
+import { productsRouter } from "./routes/products.js";
 import {
   relaiWebhookRouter,
   relaiWebhooksConfigured,
@@ -26,6 +28,7 @@ import { uploadsRouter } from "./routes/uploads.js";
 import { relaiServerApiConfigured } from "./relai.js";
 import { paymentsEnabled } from "./stripe.js";
 import { ensureUploadsDir, uploadsDir } from "./uploads.js";
+import { isPantryMode } from "./pantry.js";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
@@ -69,6 +72,8 @@ app.get("/health", async (_req, res) => {
 });
 
 app.use("/api", marketplaceRouter);
+app.use("/api", basketRouter);
+app.use("/api", productsRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/admin", adminRouter);
 
@@ -96,6 +101,7 @@ app.listen(port, () => {
   log.info("server_listening", {
     port,
     paymentsEnabled: paymentsEnabled(),
+    pantryMode: isPantryMode(),
     stripeWebhooksConfigured: stripeWebhooksConfigured(),
     relaiWebhooksConfigured: relaiWebhooksConfigured(),
     relaiServerApiConfigured: relaiServerApiConfigured(),

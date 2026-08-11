@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -24,10 +25,21 @@ type Props = {
 };
 
 export function ListingDetailScreen({ route, navigation }: Props) {
-  const { profile, toggleFavorite, isFavorite, deleteListing, showPrices } =
-    useMarketplace();
+  const {
+    profile,
+    toggleFavorite,
+    isFavorite,
+    updateListing,
+    deleteListing,
+    showPrices,
+    pantryMode,
+  } = useMarketplace();
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [editStock, setEditStock] = useState("1");
+  const [editMax, setEditMax] = useState("1");
+  const [savingCaps, setSavingCaps] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,7 +48,11 @@ export function ListingDetailScreen({ route, navigation }: Props) {
         const data = await apiRequest<Listing>(
           `/api/listings/${route.params.id}`,
         );
-        if (!cancelled) setListing(data);
+        if (!cancelled) {
+          setListing(data);
+          setEditStock(String(data.stockQty ?? 1));
+          setEditMax(String(data.maxPerOrder ?? 1));
+        }
       } catch {
         if (!cancelled) setListing(null);
       } finally {
@@ -74,6 +90,52 @@ export function ListingDetailScreen({ route, navigation }: Props) {
   function onBuy() {
     if (!canBuy || !listing) return;
     navigation.navigate("Checkout", { listingId: listing.id });
+  }
+
+  async function onAddToBasket() {
+    if (!listing) return;
+    setAdding(true);
+    try {
+      await apiRequest("/api/me/basket/items", {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify({ listingId: listing.id, quantity: 1 }),
+      });
+      Alert.alert("Basket", "Added to basket.");
+    } catch (err) {
+      Alert.alert(
+        "Basket",
+        err instanceof Error ? err.message : "Could not add",
+      );
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function onSaveCaps() {
+    if (!listing) return;
+    const stock = Number.parseInt(editStock, 10);
+    const max = Number.parseInt(editMax, 10);
+    if (!Number.isFinite(stock) || stock < 1 || !Number.isFinite(max) || max < 1) {
+      Alert.alert("Caps", "Stock and max per patron must be at least 1.");
+      return;
+    }
+    setSavingCaps(true);
+    try {
+      const next = await updateListing(listing.id, {
+        stockQty: stock,
+        maxPerOrder: max,
+      });
+      setListing(next);
+      Alert.alert("Saved", "Stock and per-item cap updated.");
+    } catch (err) {
+      Alert.alert(
+        "Could not save",
+        err instanceof Error ? err.message : "Unknown error",
+      );
+    } finally {
+      setSavingCaps(false);
+    }
   }
 
   async function onDelete() {
@@ -117,10 +179,22 @@ export function ListingDetailScreen({ route, navigation }: Props) {
           ${(listing.priceCents / 100).toFixed(2)}
         </Text>
       ) : null}
+      {pantryMode ? (
+        <Text style={styles.meta}>
+          {(listing.stockQty ?? 0) <= 0 || listing.status === "out_of_stock"
+            ? "Out of stock"
+            : `${listing.stockQty} in stock${
+                listing.maxPerOrder != null
+                  ? ` · max ${listing.maxPerOrder} per patron`
+                  : ""
+              }`}
+        </Text>
+      ) : null}
       <View style={styles.tagRow}>
         <Text style={styles.categoryTag}>{listing.category}</Text>
         <Text style={styles.meta}>
-          {listing.condition.replace("_", " ")} · {listing.status}
+          {listing.condition.replace("_", " ")} ·{" "}
+          {listing.status.replace(/_/g, " ")}
         </Text>
       </View>
       <Text style={styles.body}>{listing.description}</Text>
@@ -132,6 +206,37 @@ export function ListingDetailScreen({ route, navigation }: Props) {
         Seller: {listing.sellerName ?? listing.sellerEmail ?? "Seller"}
       </Text>
 
+      {isSeller && pantryMode ? (
+        <View style={styles.capsBox}>
+          <Text style={styles.capsTitle}>Stock & per-item cap</Text>
+          <Text style={styles.meta}>
+            Max per patron limits how many of this item one basket may hold.
+          </Text>
+          <Text style={styles.fieldLabel}>Stock</Text>
+          <TextInput
+            style={styles.input}
+            value={editStock}
+            onChangeText={setEditStock}
+            keyboardType="number-pad"
+          />
+          <Text style={styles.fieldLabel}>Max per patron</Text>
+          <TextInput
+            style={styles.input}
+            value={editMax}
+            onChangeText={setEditMax}
+            keyboardType="number-pad"
+          />
+          <Pressable
+            style={[styles.button, savingCaps && styles.disabled]}
+            disabled={savingCaps}
+            onPress={() => void onSaveCaps()}>
+            <Text style={styles.buttonText}>
+              {savingCaps ? "Saving…" : "Save caps"}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <Pressable
         style={styles.secondary}
         onPress={() => void toggleFavorite(listing.id)}>
@@ -140,7 +245,17 @@ export function ListingDetailScreen({ route, navigation }: Props) {
         </Text>
       </Pressable>
 
-      {canBuy ? (
+      {canBuy && pantryMode ? (
+        <Pressable
+          style={[styles.button, adding && styles.disabled]}
+          disabled={adding}
+          onPress={() => void onAddToBasket()}>
+          <Text style={styles.buttonText}>
+            {adding ? "Adding…" : "Add to basket"}
+          </Text>
+        </Pressable>
+      ) : null}
+      {canBuy && !pantryMode ? (
         <Pressable style={styles.button} onPress={onBuy}>
           <Text style={styles.buttonText}>Buy</Text>
         </Pressable>
@@ -208,6 +323,35 @@ const styles = StyleSheet.create({
     color: "#5c6370",
     textTransform: "capitalize",
   },
+  capsBox: {
+    marginTop: 16,
+    marginBottom: 8,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  capsTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: "#f9fafb",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
   body: {
     fontSize: 16,
     color: "#414651",
@@ -220,6 +364,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 8,
+  },
+  disabled: {
+    opacity: 0.5,
   },
   secondary: {
     backgroundColor: "#fff",

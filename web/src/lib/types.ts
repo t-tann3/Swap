@@ -28,6 +28,12 @@ export interface UserProfile {
   bio: string;
   stripeAccountId?: string | null;
   stripePayoutsReady?: boolean;
+  patronCap?: number | null;
+  isPantrySeller?: boolean;
+  pantryBlocked?: boolean;
+  adminOptOut?: boolean;
+  /** True when this Relai user is on ADMIN_* allowlist (can toggle admin on). */
+  adminEligible?: boolean;
 }
 
 export interface Listing {
@@ -44,13 +50,24 @@ export interface Listing {
   status: string;
   imageColor: string;
   imageUrl?: string | null;
+  stockQty?: number;
+  /** Max of this item a patron may put in one basket. */
+  maxPerOrder?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OrderItem {
+  listingId: string;
+  quantity: number;
+  title: string;
+  listing?: Listing | null;
 }
 
 export interface Order {
   id: string;
   listingId: string;
+  items?: OrderItem[];
   buyerUserId: string;
   sellerUserId: string;
   priceCents: number;
@@ -94,6 +111,8 @@ export interface CreateListingInput {
   condition?: ItemCondition;
   locationLabel?: string;
   imageUrl?: string | null;
+  stockQty?: number;
+  maxPerOrder?: number;
 }
 
 export interface CheckoutExchangeZone {

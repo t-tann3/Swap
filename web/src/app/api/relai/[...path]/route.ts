@@ -55,7 +55,6 @@ async function proxy(
   }
 
   const upstream = await fetch(url, init);
-  const body = await upstream.arrayBuffer();
   const outHeaders = new Headers();
   upstream.headers.forEach((value, key) => {
     if (!DROP_RES.has(key.toLowerCase())) {
@@ -63,8 +62,19 @@ async function proxy(
     }
   });
 
+  // Fetch Response forbids a body on 204/205/304 — Relai auth/revoke returns 204.
+  const status = upstream.status;
+  if (status === 204 || status === 205 || status === 304) {
+    return new Response(null, {
+      status,
+      statusText: upstream.statusText,
+      headers: outHeaders,
+    });
+  }
+
+  const body = await upstream.arrayBuffer();
   return new Response(body, {
-    status: upstream.status,
+    status,
     statusText: upstream.statusText,
     headers: outHeaders,
   });
