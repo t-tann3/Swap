@@ -107,6 +107,8 @@ export interface Order {
   updatedAt: string;
   completedAt: string | null;
   listing?: Listing | null;
+  /** Enriched from buyer profile for seller/ops views. */
+  buyerEmail?: string | null;
 }
 
 export interface CreateListingInput {

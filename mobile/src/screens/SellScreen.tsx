@@ -45,7 +45,9 @@ export function SellScreen({ navigation, route }: Props) {
     setImageUrl(draft.imageUrl);
     setScanNote(
       draft.barcode
-        ? `Filled from barcode ${draft.barcode}. Adjust stock, then post.`
+        ? draft.imageUrl
+          ? `Barcode ${draft.barcode} — catalog photo loaded. Set stock and post.`
+          : `Barcode ${draft.barcode} filled title/details. Set stock and post.`
         : "Filled from catalog. Adjust stock, then post.",
     );
     navigation.setParams({ draft: undefined });
@@ -152,7 +154,7 @@ export function SellScreen({ navigation, route }: Props) {
           </Text>
           <Text style={styles.help}>
             {pantryMode
-              ? "Scan a barcode to fill title and catalog photo, then set stock."
+              ? "Scan a barcode to fill the listing and catalog photo, then set stock and post."
               : "Items must fit a Relai Exchange Zone compartment. All doors are the same size. A listing photo is optional."}
           </Text>
           {pantryMode ? (
@@ -170,36 +172,47 @@ export function SellScreen({ navigation, route }: Props) {
             </View>
           ) : null}
           {scanNote ? <Text style={styles.scanNote}>{scanNote}</Text> : null}
-          <Text style={styles.label}>Photo (optional)</Text>
-          {previewUri ? (
-            <Image source={{ uri: previewUri }} style={styles.preview} />
+          {pantryMode ? (
+            previewUri ? (
+              <>
+                <Text style={styles.label}>Catalog photo</Text>
+                <Image source={{ uri: previewUri }} style={styles.preview} />
+              </>
+            ) : null
           ) : (
-            <View style={styles.previewEmpty}>
-              <Text style={styles.previewEmptyText}>No photo yet</Text>
-            </View>
+            <>
+              <Text style={styles.label}>Photo (optional)</Text>
+              {previewUri ? (
+                <Image source={{ uri: previewUri }} style={styles.preview} />
+              ) : (
+                <View style={styles.previewEmpty}>
+                  <Text style={styles.previewEmptyText}>No photo yet</Text>
+                </View>
+              )}
+              <View style={styles.photoRow}>
+                <Pressable
+                  style={[styles.secondary, photoBusy && styles.buttonDisabled]}
+                  disabled={photoBusy || busy}
+                  onPress={() => void onPickPhoto("camera")}>
+                  <Text style={styles.secondaryText}>Take photo</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.secondary, photoBusy && styles.buttonDisabled]}
+                  disabled={photoBusy || busy}
+                  onPress={() => void onPickPhoto("library")}>
+                  <Text style={styles.secondaryText}>Choose</Text>
+                </Pressable>
+                {imageUrl ? (
+                  <Pressable
+                    style={styles.secondary}
+                    disabled={busy}
+                    onPress={() => setImageUrl(null)}>
+                    <Text style={styles.secondaryText}>Remove</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </>
           )}
-          <View style={styles.photoRow}>
-            <Pressable
-              style={[styles.secondary, photoBusy && styles.buttonDisabled]}
-              disabled={photoBusy || busy}
-              onPress={() => void onPickPhoto("camera")}>
-              <Text style={styles.secondaryText}>Take photo</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.secondary, photoBusy && styles.buttonDisabled]}
-              disabled={photoBusy || busy}
-              onPress={() => void onPickPhoto("library")}>
-              <Text style={styles.secondaryText}>Choose</Text>
-            </Pressable>
-            {imageUrl ? (
-              <Pressable
-                style={styles.secondary}
-                disabled={busy}
-                onPress={() => setImageUrl(null)}>
-                <Text style={styles.secondaryText}>Remove</Text>
-              </Pressable>
-            ) : null}
-          </View>
           <TextInput
             style={styles.input}
             placeholder="Title"

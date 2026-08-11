@@ -3,10 +3,10 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -14,6 +14,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { apiRequest } from "../api/client";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { Listing } from "../marketplace/types";
+import { mediaUrl } from "../media/photos";
 import type { SellStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<SellStackParamList, "Inventory">;
@@ -35,7 +36,6 @@ export function InventoryScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [reasonById, setReasonById] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const res = await apiRequest<{
@@ -65,20 +65,14 @@ export function InventoryScreen({ navigation }: Props) {
   );
 
   async function adjust(listingId: string, delta: number) {
-    const reason = (reasonById[listingId] ?? "").trim();
-    if (reason.length < 2) {
-      setError("Enter a short reason before adjusting stock.");
-      return;
-    }
     setBusyId(listingId);
     setError(null);
     try {
       await apiRequest(`/api/listings/${listingId}/stock-adjust`, {
         method: "POST",
         auth: true,
-        body: JSON.stringify({ delta, reason }),
+        body: JSON.stringify({ delta }),
       });
-      setReasonById(r => ({ ...r, [listingId]: "" }));
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not adjust stock");
@@ -142,73 +136,82 @@ export function InventoryScreen({ navigation }: Props) {
             No pantry listings yet. Post food from Sell.
           </Text>
         }
-        renderItem={({ item: row }) => (
-          <View style={styles.card}>
-            <Text style={styles.title}>{row.listing.title}</Text>
-            <Text style={styles.meta}>
-              {row.outOfStock
-                ? "Out of stock"
-                : row.lowStock
-                  ? "Low stock"
-                  : "In stock"}{" "}
-              · max/order {row.listing.maxPerOrder ?? 1}
-            </Text>
-            <View style={styles.stats}>
-              <View style={styles.stat}>
-                <Text style={styles.statLabel}>Available</Text>
-                <Text style={styles.statValue}>{row.available}</Text>
+        renderItem={({ item: row }) => {
+          const photo = mediaUrl(row.listing.imageUrl);
+          return (
+            <View style={styles.card}>
+              <View style={styles.cardTop}>
+                {photo ? (
+                  <Image source={{ uri: photo }} style={styles.thumb} />
+                ) : (
+                  <View
+                    style={[
+                      styles.thumb,
+                      { backgroundColor: row.listing.imageColor },
+                    ]}
+                  />
+                )}
+                <View style={styles.cardBody}>
+                  <Text style={styles.title}>{row.listing.title}</Text>
+                  <Text style={styles.meta}>
+                    {row.outOfStock
+                      ? "Out of stock"
+                      : row.lowStock
+                        ? "Low stock"
+                        : "In stock"}{" "}
+                    · max/order {row.listing.maxPerOrder ?? 1}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.stat}>
-                <Text style={styles.statLabel}>Reserved</Text>
-                <Text style={styles.statValue}>{row.reserved}</Text>
+              <View style={styles.stats}>
+                <View style={styles.stat}>
+                  <Text style={styles.statLabel}>Available</Text>
+                  <Text style={styles.statValue}>{row.available}</Text>
+                </View>
+                <View style={styles.stat}>
+                  <Text style={styles.statLabel}>Reserved</Text>
+                  <Text style={styles.statValue}>{row.reserved}</Text>
+                </View>
+                <View style={styles.stat}>
+                  <Text style={styles.statLabel}>Total</Text>
+                  <Text style={styles.statValue}>{row.total}</Text>
+                </View>
               </View>
-              <View style={styles.stat}>
-                <Text style={styles.statLabel}>Total</Text>
-                <Text style={styles.statValue}>{row.total}</Text>
-              </View>
-            </View>
-            {(row.lowStock || row.outOfStock) && (
-              <Text
-                style={[
-                  styles.flag,
-                  row.outOfStock ? styles.flagOut : styles.flagLow,
-                ]}>
-                {row.outOfStock ? "Out of stock" : "Low stock"}
-              </Text>
-            )}
-            <TextInput
-              style={styles.input}
-              placeholder="Reason (required)"
-              value={reasonById[row.listing.id] ?? ""}
-              onChangeText={text =>
-                setReasonById(r => ({ ...r, [row.listing.id]: text }))
-              }
-            />
-            <View style={styles.row}>
-              <Pressable
-                style={[
-                  styles.adjustBtn,
-                  busyId === row.listing.id && styles.disabled,
-                ]}
-                disabled={busyId === row.listing.id}
-                onPress={() => void adjust(row.listing.id, -1)}>
-                <Text style={styles.adjustText}>−1</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.adjustBtn,
-                  styles.adjustPlus,
-                  busyId === row.listing.id && styles.disabled,
-                ]}
-                disabled={busyId === row.listing.id}
-                onPress={() => void adjust(row.listing.id, 1)}>
-                <Text style={[styles.adjustText, styles.adjustPlusText]}>
-                  +1
+              {(row.lowStock || row.outOfStock) && (
+                <Text
+                  style={[
+                    styles.flag,
+                    row.outOfStock ? styles.flagOut : styles.flagLow,
+                  ]}>
+                  {row.outOfStock ? "Out of stock" : "Low stock"}
                 </Text>
-              </Pressable>
+              )}
+              <View style={styles.row}>
+                <Pressable
+                  style={[
+                    styles.adjustBtn,
+                    busyId === row.listing.id && styles.disabled,
+                  ]}
+                  disabled={busyId === row.listing.id}
+                  onPress={() => void adjust(row.listing.id, -1)}>
+                  <Text style={styles.adjustText}>−1</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.adjustBtn,
+                    styles.adjustPlus,
+                    busyId === row.listing.id && styles.disabled,
+                  ]}
+                  disabled={busyId === row.listing.id}
+                  onPress={() => void adjust(row.listing.id, 1)}>
+                  <Text style={[styles.adjustText, styles.adjustPlusText]}>
+                    +1
+                  </Text>
+                </Pressable>
+              </View>
             </View>
-          </View>
-        )}
+          );
+        }}
       />
     </View>
   );
@@ -251,6 +254,21 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
   },
+  cardTop: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  thumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    backgroundColor: "#e5e7eb",
+  },
+  cardBody: {
+    flex: 1,
+    minWidth: 0,
+  },
   title: { fontSize: 16, fontWeight: "700" },
   meta: { marginTop: 4, color: "#5c6370", fontSize: 13 },
   stats: { flexDirection: "row", gap: 20, marginTop: 12 },
@@ -269,16 +287,6 @@ const styles = StyleSheet.create({
   },
   flagLow: { backgroundColor: "#fff7ed", color: "#9a3412" },
   flagOut: { backgroundColor: "#fef2f2", color: "#b42318" },
-  input: {
-    marginTop: 12,
-    backgroundColor: "#f9fafb",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-  },
   row: { flexDirection: "row", gap: 8, marginTop: 10 },
   adjustBtn: {
     backgroundColor: "#fff",

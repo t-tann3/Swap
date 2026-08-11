@@ -27,6 +27,7 @@ export type FavoritesStackParamList = {
 
 export type OrdersStackParamList = {
   OrdersHome: undefined;
+  OrderDetail: { orderId: string };
   DropOff: { orderId: string };
   Pickup: { orderId: string };
 };

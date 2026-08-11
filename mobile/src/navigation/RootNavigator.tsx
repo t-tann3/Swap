@@ -25,6 +25,7 @@ import { ListingDetailScreen } from "../screens/ListingDetailScreen";
 import { DropOffScreen } from "../screens/DropOffScreen";
 import { InventoryScreen } from "../screens/InventoryScreen";
 import { BarcodeScanScreen } from "../screens/BarcodeScanScreen";
+import { OrderDetailScreen } from "../screens/OrderDetailScreen";
 import { OrdersScreen } from "../screens/OrdersScreen";
 import { PickupScreen } from "../screens/PickupScreen";
 import { RoleSetupScreen } from "../screens/RoleSetupScreen";
@@ -128,6 +129,11 @@ function OrdersStackNavigator() {
         name="OrdersHome"
         component={OrdersScreen}
         options={{ title: "Orders" }}
+      />
+      <OrdersStack.Screen
+        name="OrderDetail"
+        component={OrderDetailScreen}
+        options={{ title: "Order" }}
       />
       <OrdersStack.Screen
         name="DropOff"

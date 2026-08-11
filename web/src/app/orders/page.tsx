@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { useMarketplace } from "../../context/MarketplaceContext";
-import { mediaUrl } from "../../lib/media";
 import type { Order } from "../../lib/types";
 
 type StatusBucket =
@@ -55,7 +54,7 @@ function isDropOffOverdue(order: Order): boolean {
   return Date.parse(order.sellerDropOffDeadlineAt) < Date.now();
 }
 
-function statusLabel(order: Order): string {
+function statusLabel(order: Order): string | null {
   const pantryOrder = order.priceCents === 0;
   switch (order.status) {
     case "pending_accept":
@@ -65,7 +64,7 @@ function statusLabel(order: Order): string {
         ? "Accepted — pantry drop-off needed"
         : "Accepted — drop-off needed";
     case "ready_for_pickup":
-      return "Ready for pickup";
+      return null;
     case "completed":
       if (order.completedReason === "no_show") {
         return pantryOrder
@@ -80,25 +79,9 @@ function statusLabel(order: Order): string {
   }
 }
 
-function orderLines(order: Order) {
-  if (order.items && order.items.length > 0) return order.items;
-  return [
-    {
-      listingId: order.listingId,
-      quantity: 1,
-      title: order.listing?.title ?? "Listing",
-      listing: order.listing,
-    },
-  ];
-}
-
 function orderTitle(order: Order): string {
-  const lines = orderLines(order);
-  if (lines.length === 1) {
-    return lines[0]!.listing?.title ?? lines[0]!.title ?? "Listing";
-  }
-  const units = lines.reduce((s, l) => s + l.quantity, 0);
-  return `Basket · ${lines.length} items (${units} units)`;
+  const email = order.buyerEmail?.trim() || "Unknown";
+  return `${email}'s Order Basket`;
 }
 
 export default function OrdersPage() {
@@ -106,11 +89,7 @@ export default function OrdersPage() {
     ordersAsBuyer,
     ordersAsSeller,
     profile,
-    acceptOrder,
-    cancelOrder,
-    disputeOrder,
     showPrices,
-    pantryMode,
   } = useMarketplace();
   const isBuyer = profile?.roles.includes("buyer") ?? false;
   const isSellerRole = profile?.roles.includes("seller") ?? false;
@@ -120,9 +99,6 @@ export default function OrdersPage() {
     isSellerRole && !isBuyer ? "selling" : "buying",
   );
   const [statusBucket, setStatusBucket] = useState<StatusBucket>("placed");
-  const [error, setError] = useState<string | null>(null);
-  const [disputeFor, setDisputeFor] = useState<string | null>(null);
-  const [disputeReason, setDisputeReason] = useState("");
 
   const roleTab: "buying" | "selling" = showRoleTabs
     ? tab
@@ -139,51 +115,6 @@ export default function OrdersPage() {
       roleOrders.filter(o => activeBucket.statuses.includes(o.status)),
     [roleOrders, activeBucket],
   );
-
-  async function onAccept(order: Order) {
-    setError(null);
-    try {
-      await acceptOrder(order.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not accept");
-    }
-  }
-
-  async function onCancel(order: Order) {
-    setError(null);
-    try {
-      await cancelOrder(order.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not cancel");
-    }
-  }
-
-  async function onDispute(order: Order) {
-    setError(null);
-    if (disputeReason.trim().length < 8) {
-      setError("Describe the issue in at least 8 characters.");
-      return;
-    }
-    try {
-      await disputeOrder(order.id, disputeReason.trim());
-      setDisputeFor(null);
-      setDisputeReason("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not open dispute");
-    }
-  }
-
-  function canDispute(order: Order): boolean {
-    if (pantryMode || order.priceCents === 0) return false;
-    if (order.platformDisputeOpenedAt || order.paymentStatus === "disputed") {
-      return false;
-    }
-    return (
-      order.status === "accepted" ||
-      order.status === "ready_for_pickup" ||
-      order.status === "completed"
-    );
-  }
 
   return (
     <div>
@@ -235,34 +166,38 @@ export default function OrdersPage() {
         })}
       </div>
 
-      {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
-
       <div className="mt-5 space-y-3">
         {data.map(item => {
           const isSeller = roleTab === "selling";
+          const label = statusLabel(item);
           return (
-            <div key={item.id} className="rounded-xl bg-white p-4 shadow-sm">
-              <h2 className="font-semibold">{orderTitle(item)}</h2>
-              {orderLines(item).length > 1 ? (
-                <ul className="mt-2 space-y-1 text-sm text-zinc-600">
-                  {orderLines(item).map(line => (
-                    <li key={line.listingId}>
-                      {line.quantity}× {line.listing?.title ?? line.title}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <p className="mt-1 text-sm text-zinc-500">
-                {showPrices
-                  ? `$${(item.priceCents / 100).toFixed(2)} · `
-                  : ""}
-                {statusLabel(item)}
-                {isSeller && isDropOffOverdue(item) ? (
-                  <span className="ml-2 font-semibold text-amber-800">
-                    Overdue
-                  </span>
-                ) : null}
+            <Link
+              key={item.id}
+              href={`/orders/${item.id}`}
+              className="block rounded-xl bg-white p-4 shadow-sm transition hover:bg-zinc-50"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="font-semibold">{orderTitle(item)}</h2>
+                <span className="text-xl font-light text-zinc-400">›</span>
+              </div>
+              <p className="mt-1 text-xs font-semibold text-zinc-600">
+                Order ID: {item.id}
               </p>
+              {showPrices || label || (isSeller && isDropOffOverdue(item)) ? (
+                <p className="mt-1 text-sm text-zinc-500">
+                  {showPrices
+                    ? `$${(item.priceCents / 100).toFixed(2)}${
+                        label ? " · " : ""
+                      }`
+                    : ""}
+                  {label ?? ""}
+                  {isSeller && isDropOffOverdue(item) ? (
+                    <span className="ml-2 font-semibold text-amber-800">
+                      Overdue
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
               {item.exchangeZoneName ? (
                 <p className="mt-1 text-sm text-zinc-500">
                   Exchange Zone: {item.exchangeZoneName}
@@ -271,139 +206,7 @@ export default function OrdersPage() {
                     : ""}
                 </p>
               ) : null}
-              {item.status === "ready_for_pickup" && item.pickupLinkExpiresAt ? (
-                <p className="mt-1 text-sm text-zinc-500">
-                  Pick up by{" "}
-                  {new Date(item.pickupLinkExpiresAt).toLocaleString()}
-                  {showPrices && item.priceCents > 0
-                    ? " — after that, escrow releases to the seller"
-                    : pantryMode || item.priceCents === 0
-                      ? " — after that the order may close as a no-show"
-                      : ""}
-                </p>
-              ) : null}
-              {item.status === "ready_for_pickup" && item.pickupLinkCode ? (
-                <div className="mt-3 rounded-lg bg-zinc-100 p-3">
-                  <p className="text-[11px] font-bold uppercase text-zinc-500">
-                    Pickup link
-                  </p>
-                  <p className="mt-1 break-all font-mono text-xs font-semibold">
-                    {item.pickupLinkCode}
-                  </p>
-                </div>
-              ) : null}
-              {item.dropOffPhotoUrl &&
-              (item.status === "ready_for_pickup" ||
-                item.status === "completed") ? (
-                <div className="mt-3">
-                  <p className="text-[11px] font-bold uppercase text-zinc-500">
-                    Compartment photo
-                  </p>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={mediaUrl(item.dropOffPhotoUrl)!}
-                    alt="Item in compartment"
-                    className="mt-2 h-40 w-full rounded-lg object-cover"
-                  />
-                </div>
-              ) : null}
-              {(item.platformDisputeOpenedAt ||
-                item.paymentStatus === "disputed") &&
-              item.priceCents > 0 &&
-              !pantryMode ? (
-                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  Dispute open
-                  {item.platformDisputeReason
-                    ? `: ${item.platformDisputeReason}`
-                    : item.disputeStatus
-                      ? ` (Stripe: ${item.disputeStatus})`
-                      : ""}
-                  . Escrow is frozen until ops review.
-                </p>
-              ) : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {isSeller && item.status === "pending_accept" ? (
-                  <button
-                    type="button"
-                    onClick={() => void onAccept(item)}
-                    className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white"
-                  >
-                    Accept order
-                  </button>
-                ) : null}
-                {isSeller && item.status === "accepted" ? (
-                  <Link
-                    href={`/orders/${item.id}/drop-off`}
-                    className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white"
-                  >
-                    {item.priceCents === 0
-                      ? "Drop off basket"
-                      : "Drop off item"}
-                  </Link>
-                ) : null}
-                {!isSeller && item.status === "ready_for_pickup" ? (
-                  <Link
-                    href={`/orders/${item.id}/pickup`}
-                    className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white"
-                  >
-                    Pick up item
-                  </Link>
-                ) : null}
-                {(item.status === "pending_accept" ||
-                  item.status === "accepted") && (
-                  <button
-                    type="button"
-                    onClick={() => void onCancel(item)}
-                    className="rounded-lg bg-zinc-100 px-3 py-2 text-sm font-semibold"
-                  >
-                    Cancel
-                  </button>
-                )}
-                {canDispute(item) ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDisputeFor(item.id);
-                      setDisputeReason("");
-                    }}
-                    className="rounded-lg bg-zinc-100 px-3 py-2 text-sm font-semibold"
-                  >
-                    Open dispute
-                  </button>
-                ) : null}
-              </div>
-              {disputeFor === item.id ? (
-                <div className="mt-3 space-y-2 rounded-lg border border-zinc-200 p-3">
-                  <p className="text-sm text-zinc-600">
-                    After drop-off, the item may already be in a locker. Describe
-                    the issue — ops will refund or release after review.
-                  </p>
-                  <textarea
-                    value={disputeReason}
-                    onChange={e => setDisputeReason(e.target.value)}
-                    rows={3}
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-                    placeholder="What went wrong?"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void onDispute(item)}
-                      className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white"
-                    >
-                      Submit dispute
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDisputeFor(null)}
-                      className="rounded-lg bg-zinc-100 px-3 py-2 text-sm font-semibold"
-                    >
-                      Back
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            </Link>
           );
         })}
         {data.length === 0 ? (

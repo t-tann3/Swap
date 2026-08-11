@@ -77,23 +77,17 @@ function order(partial: Partial<Order> = {}): Order {
 }
 
 describe("stock adjustments", () => {
-  it("increments and decrements with reason", () => {
+  it("increments and decrements without requiring a reason", () => {
     const item = listing({ stockQty: 5 });
-    const up = applyStockAdjustment(item, "seller", 3, "donation intake");
+    const up = applyStockAdjustment(item, "seller", 3);
     expect(up.previousQty).toBe(5);
     expect(up.nextQty).toBe(8);
     expect(item.stockQty).toBe(8);
     expect(item.status).toBe("available");
 
-    const down = applyStockAdjustment(item, "seller", -8, "spoiled");
+    const down = applyStockAdjustment(item, "seller", -8);
     expect(down.nextQty).toBe(0);
     expect(item.status).toBe("out_of_stock");
-  });
-
-  it("rejects empty reason", () => {
-    expect(() => applyStockAdjustment(listing(), "seller", 1, " ")).toThrow(
-      "invalid_reason",
-    );
   });
 });
 

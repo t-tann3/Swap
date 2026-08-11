@@ -79,7 +79,9 @@ export default function SellPage() {
       setCategory(product.category);
       if (product.imageUrl) setImageUrl(product.imageUrl);
       setMessage(
-        `Filled from barcode ${product.barcode}. Set stock and list food.`,
+        product.imageUrl
+          ? `Barcode ${product.barcode} — catalog photo loaded. Set stock and post.`
+          : `Barcode ${product.barcode} filled title/details. Set stock and post.`,
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Barcode lookup failed");
@@ -133,6 +135,7 @@ export default function SellPage() {
       setMaxPerOrder("1");
       setCategory("General");
       setImageUrl(null);
+      setBarcode("");
       setMessage(pantryMode ? "Food listed for pantry." : "Listing posted.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not post");
@@ -151,7 +154,7 @@ export default function SellPage() {
         </h1>
         <p className="mt-2 text-sm text-zinc-600">
           {pantryMode
-            ? "Look up a barcode to fill title and catalog photo, then set stock."
+            ? "Look up a barcode to fill the listing and catalog photo, then set stock and post."
             : "Items must fit a Relai Exchange Zone compartment. All doors are the same size. A listing photo is optional."}
         </p>
         {pantryMode ? (
@@ -183,37 +186,51 @@ export default function SellPage() {
           </div>
         ) : null}
         <div className="mt-4 space-y-3">
-          <div>
-            <p className="mb-2 text-sm font-semibold">Photo (optional)</p>
-            {preview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={preview}
-                alt="Listing preview"
-                className="mb-2 h-44 w-full rounded-xl object-cover"
-              />
-            ) : (
-              <div className="mb-2 flex h-28 items-center justify-center rounded-xl bg-zinc-100 text-sm text-zinc-500">
-                No photo yet
+          {pantryMode ? (
+            preview ? (
+              <div>
+                <p className="mb-2 text-sm font-semibold">Catalog photo</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={preview}
+                  alt="Catalog preview"
+                  className="mb-2 h-44 w-full rounded-xl object-cover"
+                />
               </div>
-            )}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              disabled={busy || photoBusy}
-              onChange={e => void onFileChange(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-zinc-600"
-            />
-            {imageUrl ? (
-              <button
-                type="button"
-                className="mt-2 text-sm font-semibold text-zinc-600 underline"
-                onClick={() => setImageUrl(null)}
-              >
-                Remove photo
-              </button>
-            ) : null}
-          </div>
+            ) : null
+          ) : (
+            <div>
+              <p className="mb-2 text-sm font-semibold">Photo (optional)</p>
+              {preview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={preview}
+                  alt="Listing preview"
+                  className="mb-2 h-44 w-full rounded-xl object-cover"
+                />
+              ) : (
+                <div className="mb-2 flex h-28 items-center justify-center rounded-xl bg-zinc-100 text-sm text-zinc-500">
+                  No photo yet
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={busy || photoBusy}
+                onChange={e => void onFileChange(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-zinc-600"
+              />
+              {imageUrl ? (
+                <button
+                  type="button"
+                  className="mt-2 block text-sm font-semibold text-zinc-600 underline"
+                  onClick={() => setImageUrl(null)}
+                >
+                  Remove photo
+                </button>
+              ) : null}
+            </div>
+          )}
           <input
             className="w-full rounded-xl border border-zinc-200 px-4 py-3"
             placeholder="Title"

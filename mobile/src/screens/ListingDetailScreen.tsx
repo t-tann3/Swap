@@ -33,6 +33,7 @@ export function ListingDetailScreen({ route, navigation }: Props) {
     deleteListing,
     showPrices,
     pantryMode,
+    activeMode,
   } = useMarketplace();
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,11 +81,16 @@ export function ListingDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const isSeller = profile?.userId === listing.sellerUserId;
+  const ownsListing = profile?.userId === listing.sellerUserId;
+  const showSellerTools =
+    ownsListing &&
+    activeMode === "seller" &&
+    !!profile?.roles.includes("seller");
   const canBuy =
     !!profile?.roles.includes("buyer") &&
     listing.status === "available" &&
-    !isSeller;
+    activeMode === "buyer" &&
+    (!ownsListing || pantryMode);
   const liked = isFavorite(listing.id);
 
   function onBuy() {
@@ -198,15 +204,8 @@ export function ListingDetailScreen({ route, navigation }: Props) {
         </Text>
       </View>
       <Text style={styles.body}>{listing.description}</Text>
-      <Text style={styles.meta}>
-        Must fit a Relai Exchange Zone compartment. All doors are the same size.
-      </Text>
-      <Text style={styles.meta}>Pickup area: {listing.locationLabel}</Text>
-      <Text style={styles.meta}>
-        Seller: {listing.sellerName ?? listing.sellerEmail ?? "Seller"}
-      </Text>
 
-      {isSeller && pantryMode ? (
+      {showSellerTools && pantryMode ? (
         <View style={styles.capsBox}>
           <Text style={styles.capsTitle}>Stock & per-item cap</Text>
           <Text style={styles.meta}>
@@ -237,13 +236,15 @@ export function ListingDetailScreen({ route, navigation }: Props) {
         </View>
       ) : null}
 
-      <Pressable
-        style={styles.secondary}
-        onPress={() => void toggleFavorite(listing.id)}>
-        <Text style={styles.secondaryText}>
-          {liked ? "Remove favorite" : "Save to favorites"}
-        </Text>
-      </Pressable>
+      {showSellerTools ? null : (
+        <Pressable
+          style={styles.secondary}
+          onPress={() => void toggleFavorite(listing.id)}>
+          <Text style={styles.secondaryText}>
+            {liked ? "Remove favorite" : "Save to favorites"}
+          </Text>
+        </Pressable>
+      )}
 
       {canBuy && pantryMode ? (
         <Pressable
@@ -261,7 +262,7 @@ export function ListingDetailScreen({ route, navigation }: Props) {
         </Pressable>
       ) : null}
 
-      {isSeller ? (
+      {showSellerTools ? (
         <Pressable style={styles.danger} onPress={onDelete}>
           <Text style={styles.buttonText}>Delete listing</Text>
         </Pressable>

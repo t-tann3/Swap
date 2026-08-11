@@ -35,6 +35,9 @@ interface MarketplaceContextValue {
   /** Admin-toggled pantry mode (baskets + caps, no seller payouts). */
   pantryMode: boolean;
   defaultPatronCap: number;
+  /** Account switch: which persona the UI is using right now. */
+  activeMode: "buyer" | "seller";
+  setActiveMode: (mode: "buyer" | "seller") => void;
   ready: boolean;
   refreshing: boolean;
   searchQuery: string;
@@ -87,6 +90,27 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
   const [showPrices, setShowPrices] = useState(false);
   const [pantryMode, setPantryMode] = useState(false);
   const [defaultPatronCap, setDefaultPatronCap] = useState(5);
+  const [activeMode, setActiveModeState] = useState<"buyer" | "seller">(() => {
+    if (typeof window === "undefined") return "buyer";
+    const stored = window.localStorage.getItem("swap.activeMarketplaceMode");
+    return stored === "seller" || stored === "buyer" ? stored : "buyer";
+  });
+
+  useEffect(() => {
+    const roles = profile?.roles ?? [];
+    if (roles.includes(activeMode)) return;
+    if (roles.includes("buyer")) setActiveModeState("buyer");
+    else if (roles.includes("seller")) setActiveModeState("seller");
+  }, [profile?.roles, activeMode]);
+
+  const setActiveMode = useCallback((mode: "buyer" | "seller") => {
+    setActiveModeState(mode);
+    try {
+      window.localStorage.setItem("swap.activeMarketplaceMode", mode);
+    } catch {
+      // non-fatal
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     if (status !== "signedIn" || !me) return;
@@ -319,10 +343,14 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
 
   const availableListings = useMemo(
     () =>
-      listings.filter(
-        l => l.status === "available" && l.sellerUserId !== me?.user_id,
-      ),
-    [listings, me?.user_id],
+      listings.filter(l => {
+        if (l.status !== "available") return false;
+        // Marketplace: hide your own posts so you cannot buy them.
+        // Pantry: show the full shelf (staff often use one account to stock + browse).
+        if (pantryMode) return true;
+        return l.sellerUserId !== me?.user_id;
+      }),
+    [listings, me?.user_id, pantryMode],
   );
 
   const value = useMemo(
@@ -336,6 +364,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       showPrices,
       pantryMode,
       defaultPatronCap,
+      activeMode,
+      setActiveMode,
       ready,
       refreshing,
       searchQuery,
@@ -369,6 +399,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       showPrices,
       pantryMode,
       defaultPatronCap,
+      activeMode,
+      setActiveMode,
       ready,
       refreshing,
       searchQuery,

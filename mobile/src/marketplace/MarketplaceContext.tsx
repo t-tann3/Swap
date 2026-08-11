@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { apiRequest } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -19,6 +20,8 @@ import type {
   Order,
   UserProfile,
 } from "./types";
+
+const ACTIVE_MODE_KEY = "swap.activeMarketplaceMode";
 
 interface MarketplaceContextValue {
   profile: UserProfile | null;
@@ -33,6 +36,9 @@ interface MarketplaceContextValue {
   showPrices: boolean;
   pantryMode: boolean;
   defaultPatronCap: number;
+  /** Account switch: which persona the UI is using right now. */
+  activeMode: "buyer" | "seller";
+  setActiveMode: (mode: "buyer" | "seller") => Promise<void>;
   ready: boolean;
   refreshing: boolean;
   searchQuery: string;
@@ -86,6 +92,44 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
   const [showPrices, setShowPrices] = useState(false);
   const [pantryMode, setPantryMode] = useState(false);
   const [defaultPatronCap, setDefaultPatronCap] = useState(5);
+  const [activeMode, setActiveModeState] = useState<"buyer" | "seller">("buyer");
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(ACTIVE_MODE_KEY);
+        if (
+          !cancelled &&
+          (stored === "buyer" || stored === "seller")
+        ) {
+          setActiveModeState(stored);
+        }
+      } catch {
+        // keep default
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep activeMode valid for the roles the user actually has.
+  useEffect(() => {
+    const roles = profile?.roles ?? [];
+    if (roles.includes(activeMode)) return;
+    if (roles.includes("buyer")) setActiveModeState("buyer");
+    else if (roles.includes("seller")) setActiveModeState("seller");
+  }, [profile?.roles, activeMode]);
+
+  const setActiveMode = useCallback(async (mode: "buyer" | "seller") => {
+    setActiveModeState(mode);
+    try {
+      await AsyncStorage.setItem(ACTIVE_MODE_KEY, mode);
+    } catch {
+      // non-fatal
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     if (status !== "signedIn" || !me) return;
@@ -345,10 +389,14 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
 
   const availableListings = useMemo(
     () =>
-      listings.filter(
-        l => l.status === "available" && l.sellerUserId !== me?.user_id,
-      ),
-    [listings, me?.user_id],
+      listings.filter(l => {
+        if (l.status !== "available") return false;
+        // Marketplace: hide your own posts so you cannot buy them.
+        // Pantry: show the full shelf (staff often use one account to stock + browse).
+        if (pantryMode) return true;
+        return l.sellerUserId !== me?.user_id;
+      }),
+    [listings, me?.user_id, pantryMode],
   );
 
   const value = useMemo(
@@ -363,6 +411,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       showPrices,
       pantryMode,
       defaultPatronCap,
+      activeMode,
+      setActiveMode,
       ready,
       refreshing,
       searchQuery,
@@ -397,6 +447,8 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       showPrices,
       pantryMode,
       defaultPatronCap,
+      activeMode,
+      setActiveMode,
       ready,
       refreshing,
       searchQuery,

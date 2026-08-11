@@ -19,6 +19,8 @@ export function AccountScreen() {
   const {
     profile,
     setRoles,
+    activeMode,
+    setActiveMode,
     ordersAsBuyer,
     ordersAsSeller,
     myListings,
@@ -46,12 +48,17 @@ export function AccountScreen() {
     }, []),
   );
 
-  async function toggle(role: "buyer" | "seller") {
-    const next = (["buyer", "seller"] as const).filter(
-      r => (r === role ? !roles.includes(r) : roles.includes(r)),
-    );
-    if (next.length === 0) return;
-    await setRoles(next as MarketplaceRole[]);
+  async function selectMode(mode: "buyer" | "seller") {
+    await setActiveMode(mode);
+    if (!roles.includes(mode)) {
+      const next = [
+        ...roles.filter((r): r is "buyer" | "seller" => r === "buyer" || r === "seller"),
+        mode,
+      ];
+      // Keep the other role if it was already on.
+      const unique = [...new Set(next)] as MarketplaceRole[];
+      await setRoles(unique);
+    }
   }
 
   async function toggleAdmin() {
@@ -92,15 +99,18 @@ export function AccountScreen() {
       <Text style={styles.label}>Environment</Text>
       <Text style={styles.value}>{me?.app.environment}</Text>
 
-      <Text style={[styles.heading, styles.section]}>Roles</Text>
+      <Text style={[styles.heading, styles.section]}>Using app as</Text>
+      <Text style={styles.meta}>
+        Switch persona for Browse vs Sell tools. Both roles can stay enabled.
+      </Text>
       <Pressable
-        style={[styles.chip, roles.includes("buyer") && styles.chipOn]}
-        onPress={() => void toggle("buyer")}>
+        style={[styles.chip, activeMode === "buyer" && styles.chipOn]}
+        onPress={() => void selectMode("buyer")}>
         <Text style={styles.chipText}>Buyer</Text>
       </Pressable>
       <Pressable
-        style={[styles.chip, roles.includes("seller") && styles.chipOn]}
-        onPress={() => void toggle("seller")}>
+        style={[styles.chip, activeMode === "seller" && styles.chipOn]}
+        onPress={() => void selectMode("seller")}>
         <Text style={styles.chipText}>Seller</Text>
       </Pressable>
       {profile?.adminEligible ? (

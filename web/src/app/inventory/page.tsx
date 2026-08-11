@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { useMarketplace } from "../../context/MarketplaceContext";
 import { apiRequest } from "../../lib/api";
+import { mediaUrl } from "../../lib/media";
 import type { Listing } from "../../lib/types";
 
 type InventoryRow = {
@@ -23,7 +24,6 @@ export default function InventoryPage() {
   const [threshold, setThreshold] = useState(3);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [reasonById, setReasonById] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const res = await apiRequest<{
@@ -42,20 +42,14 @@ export default function InventoryPage() {
   }, [ready, isSeller, pantryMode, load]);
 
   async function adjust(listingId: string, delta: number) {
-    const reason = (reasonById[listingId] ?? "").trim();
-    if (reason.length < 2) {
-      setError("Enter a short reason before adjusting stock.");
-      return;
-    }
     setBusyId(listingId);
     setError(null);
     try {
       await apiRequest(`/api/listings/${listingId}/stock-adjust`, {
         method: "POST",
         auth: true,
-        body: JSON.stringify({ delta, reason }),
+        body: JSON.stringify({ delta }),
       });
-      setReasonById(r => ({ ...r, [listingId]: "" }));
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not adjust stock");
@@ -114,22 +108,37 @@ export default function InventoryPage() {
             key={row.listing.id}
             className="rounded-2xl bg-white p-5 shadow-sm"
           >
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <Link
-                  href={`/listing/${row.listing.id}`}
-                  className="font-semibold hover:underline"
-                >
-                  {row.listing.title}
-                </Link>
-                <p className="mt-1 text-xs text-zinc-500">
-                  {row.outOfStock
-                    ? "Out of stock"
-                    : row.lowStock
-                      ? "Low stock"
-                      : "In stock"}{" "}
-                  · max/order {row.listing.maxPerOrder ?? 1}
-                </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-1 gap-3">
+                {mediaUrl(row.listing.imageUrl) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={mediaUrl(row.listing.imageUrl)!}
+                    alt=""
+                    className="h-16 w-16 shrink-0 rounded-lg object-cover"
+                  />
+                ) : (
+                  <div
+                    className="h-16 w-16 shrink-0 rounded-lg"
+                    style={{ backgroundColor: row.listing.imageColor }}
+                  />
+                )}
+                <div className="min-w-0">
+                  <Link
+                    href={`/listing/${row.listing.id}`}
+                    className="font-semibold hover:underline"
+                  >
+                    {row.listing.title}
+                  </Link>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {row.outOfStock
+                      ? "Out of stock"
+                      : row.lowStock
+                        ? "Low stock"
+                        : "In stock"}{" "}
+                    · max/order {row.listing.maxPerOrder ?? 1}
+                  </p>
+                </div>
               </div>
               <div className="flex gap-4 text-sm">
                 <div>
@@ -147,18 +156,6 @@ export default function InventoryPage() {
               </div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <input
-                type="text"
-                placeholder="Reason (required)"
-                value={reasonById[row.listing.id] ?? ""}
-                onChange={e =>
-                  setReasonById(r => ({
-                    ...r,
-                    [row.listing.id]: e.target.value,
-                  }))
-                }
-                className="min-w-[12rem] flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-              />
               <button
                 type="button"
                 disabled={busyId === row.listing.id}

@@ -13,6 +13,8 @@ export default function AccountPage() {
   const {
     profile,
     setRoles,
+    activeMode,
+    setActiveMode,
     ordersAsBuyer,
     ordersAsSeller,
     myListings,
@@ -60,15 +62,17 @@ export default function AccountPage() {
     }
   }, [refresh]);
 
-  async function toggle(role: "buyer" | "seller") {
-    const next = roles.includes(role)
-      ? roles.filter(r => r !== role)
-      : [...roles.filter(r => r === "buyer" || r === "seller"), role];
-    const selfServe = next.filter((r): r is "buyer" | "seller" =>
-      r === "buyer" || r === "seller",
-    );
-    if (!selfServe.length) return;
-    await setRoles(selfServe as MarketplaceRole[]);
+  async function selectMode(mode: "buyer" | "seller") {
+    setActiveMode(mode);
+    if (!roles.includes(mode)) {
+      const next = [
+        ...roles.filter(
+          (r): r is "buyer" | "seller" => r === "buyer" || r === "seller",
+        ),
+        mode,
+      ];
+      await setRoles([...new Set(next)] as MarketplaceRole[]);
+    }
   }
 
   async function toggleAdmin() {
@@ -110,18 +114,21 @@ export default function AccountPage() {
       </p>
       <p className="font-medium">{me?.app.environment}</p>
 
-      <h2 className="mt-8 text-lg font-semibold">Roles</h2>
+      <h2 className="mt-8 text-lg font-semibold">Using app as</h2>
+      <p className="mt-1 text-sm text-zinc-600">
+        Switch persona for Browse vs Sell tools. Both roles can stay enabled.
+      </p>
       <div className="mt-3 space-y-2">
-        {(["buyer", "seller"] as const).map(role => (
+        {(["buyer", "seller"] as const).map(mode => (
           <button
-            key={role}
+            key={mode}
             type="button"
-            onClick={() => void toggle(role)}
+            onClick={() => void selectMode(mode)}
             className={`w-full rounded-xl border-2 px-4 py-3 text-left font-semibold capitalize ${
-              roles.includes(role) ? "border-zinc-900" : "border-zinc-100"
+              activeMode === mode ? "border-zinc-900" : "border-zinc-100"
             }`}
           >
-            {role}
+            {mode}
           </button>
         ))}
         {profile?.adminEligible ? (

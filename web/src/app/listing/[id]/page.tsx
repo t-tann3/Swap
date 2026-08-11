@@ -20,6 +20,7 @@ export default function ListingDetailPage() {
     deleteListing,
     showPrices,
     pantryMode,
+    activeMode,
   } = useMarketplace();
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,11 +49,16 @@ export default function ListingDetailPage() {
     return <p className="text-zinc-500">Loading…</p>;
   }
 
-  const isSeller = profile?.userId === listing.sellerUserId;
+  const ownsListing = profile?.userId === listing.sellerUserId;
+  const showSellerTools =
+    ownsListing &&
+    activeMode === "seller" &&
+    !!profile?.roles.includes("seller");
   const canTake =
     !!profile?.roles.includes("buyer") &&
     listing.status === "available" &&
-    !isSeller;
+    activeMode === "buyer" &&
+    (!ownsListing || pantryMode);
   const liked = isFavorite(listing.id);
 
   async function addToBasket() {
@@ -140,14 +146,8 @@ export default function ListingDetailPage() {
         </span>
       </div>
       <p className="mt-4 text-zinc-700 leading-relaxed">{listing.description}</p>
-      <p className="mt-2 text-sm text-zinc-500">
-        Must fit a Relai Exchange Zone compartment. All doors are the same size.
-      </p>
-      <p className="mt-3 text-sm text-zinc-500">
-        Seller: {listing.sellerName ?? listing.sellerEmail ?? "Seller"}
-      </p>
 
-      {isSeller && pantryMode ? (
+      {showSellerTools && pantryMode ? (
         <div className="mt-6 rounded-2xl bg-white p-4 ring-1 ring-zinc-200">
           <p className="font-semibold">Stock &amp; per-item cap</p>
           <p className="mt-1 text-sm text-zinc-600">
@@ -194,13 +194,15 @@ export default function ListingDetailPage() {
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
       <div className="mt-6 flex flex-col gap-3">
-        <button
-          type="button"
-          onClick={() => void toggleFavorite(listing.id)}
-          className="rounded-xl bg-white py-3 font-semibold ring-1 ring-zinc-200"
-        >
-          {liked ? "Remove favorite" : "Save to favorites"}
-        </button>
+        {!showSellerTools ? (
+          <button
+            type="button"
+            onClick={() => void toggleFavorite(listing.id)}
+            className="rounded-xl bg-white py-3 font-semibold ring-1 ring-zinc-200"
+          >
+            {liked ? "Remove favorite" : "Save to favorites"}
+          </button>
+        ) : null}
         {canTake && pantryMode ? (
           <>
             <button
@@ -227,7 +229,7 @@ export default function ListingDetailPage() {
             Buy
           </Link>
         ) : null}
-        {isSeller ? (
+        {showSellerTools ? (
           <button
             type="button"
             className="rounded-xl bg-red-700 py-3 font-semibold text-white"

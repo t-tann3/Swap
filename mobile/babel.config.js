@@ -10,6 +10,8 @@ module.exports = {
         allowUndefined: true,
       },
     ],
-    "react-native-worklets-core/plugin",
+    // Code-scanner barcode capture does not need frame-processor worklets.
+    // Keeping the worklets babel plugin breaks the iOS bundle (missing
+    // @babel/plugin-proposal-optional-chaining inside vision-camera sources).
   ],
 };

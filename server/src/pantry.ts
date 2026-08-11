@@ -281,18 +281,17 @@ export function sellerInventory(sellerUserId: string) {
     });
 }
 
-/** Apply a signed stock delta with an audit reason. */
+/** Apply a signed stock delta. Optional reason is kept on the ledger when provided. */
 export function applyStockAdjustment(
   listing: Listing,
   sellerUserId: string,
   delta: number,
-  reason: string,
+  reason = "",
   ts = new Date().toISOString(),
 ): StockAdjustment {
   const n = Math.trunc(delta);
   if (n === 0) throw new Error("invalid_delta");
   const trimmed = reason.trim().slice(0, 200);
-  if (trimmed.length < 2) throw new Error("invalid_reason");
   if (
     listing.status === "cancelled" ||
     listing.status === "draft" ||

@@ -1,9 +1,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useState } from "react";
 import {
-  Alert,
   FlatList,
-  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -14,7 +12,6 @@ import { useFocusEffect } from "@react-navigation/native";
 
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { Order } from "../marketplace/types";
-import { mediaUrl } from "../media/photos";
 import type { OrdersStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<OrdersStackParamList, "OrdersHome">;
@@ -67,7 +64,7 @@ function isDropOffOverdue(order: Order): boolean {
   return Date.parse(order.sellerDropOffDeadlineAt) < Date.now();
 }
 
-function statusLabel(order: Order): string {
+function statusLabel(order: Order): string | null {
   const pantryOrder = order.priceCents === 0;
   switch (order.status) {
     case "pending_accept":
@@ -77,7 +74,7 @@ function statusLabel(order: Order): string {
         ? "Accepted — pantry drop-off needed"
         : "Accepted — drop-off needed";
     case "ready_for_pickup":
-      return "Ready for pickup";
+      return null;
     case "completed":
       if (order.completedReason === "no_show") {
         return pantryOrder
@@ -92,25 +89,9 @@ function statusLabel(order: Order): string {
   }
 }
 
-function orderLines(order: Order) {
-  if (order.items && order.items.length > 0) return order.items;
-  return [
-    {
-      listingId: order.listingId,
-      quantity: 1,
-      title: order.listing?.title ?? "Listing",
-      listing: order.listing,
-    },
-  ];
-}
-
 function orderTitle(order: Order): string {
-  const lines = orderLines(order);
-  if (lines.length === 1) {
-    return lines[0]!.listing?.title ?? lines[0]!.title ?? "Listing";
-  }
-  const units = lines.reduce((s, l) => s + l.quantity, 0);
-  return `Basket · ${lines.length} items (${units} units)`;
+  const email = order.buyerEmail?.trim() || "Unknown";
+  return `${email}'s Order Basket`;
 }
 
 export function OrdersScreen({ navigation }: Props) {
@@ -118,13 +99,9 @@ export function OrdersScreen({ navigation }: Props) {
     ordersAsBuyer,
     ordersAsSeller,
     profile,
-    acceptOrder,
-    cancelOrder,
-    disputeOrder,
     refresh,
     refreshing,
     showPrices,
-    pantryMode,
   } = useMarketplace();
 
   const isBuyer = profile?.roles.includes("buyer") ?? false;
@@ -142,7 +119,6 @@ export function OrdersScreen({ navigation }: Props) {
 
   useFocusEffect(refreshOnFocus);
 
-  // Keep role tab valid when roles change (e.g. seller-only ↔ buyer-only).
   const roleTab: "buying" | "selling" = showRoleTabs
     ? tab
     : isSellerRole && !isBuyer
@@ -156,71 +132,6 @@ export function OrdersScreen({ navigation }: Props) {
   const data = roleOrders.filter(o =>
     activeBucket.statuses.includes(o.status),
   );
-
-  async function onAccept(order: Order) {
-    try {
-      await acceptOrder(order.id);
-    } catch (err) {
-      Alert.alert(
-        "Could not accept",
-        err instanceof Error ? err.message : "Unknown error",
-      );
-    }
-  }
-
-  async function onCancel(order: Order) {
-    try {
-      await cancelOrder(order.id);
-    } catch (err) {
-      Alert.alert(
-        "Could not cancel",
-        err instanceof Error ? err.message : "Unknown error",
-      );
-    }
-  }
-
-  function onDispute(order: Order) {
-    Alert.prompt(
-      "Open dispute",
-      "After drop-off the item may be in a locker. Describe the issue — ops will refund or release after review.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Submit",
-          onPress: (reason: string | undefined) => {
-            const text = (reason ?? "").trim();
-            if (text.length < 8) {
-              Alert.alert("Need more detail", "Use at least 8 characters.");
-              return;
-            }
-            void (async () => {
-              try {
-                await disputeOrder(order.id, text);
-              } catch (err) {
-                Alert.alert(
-                  "Could not open dispute",
-                  err instanceof Error ? err.message : "Unknown error",
-                );
-              }
-            })();
-          },
-        },
-      ],
-      "plain-text",
-    );
-  }
-
-  function canDispute(order: Order): boolean {
-    if (pantryMode || order.priceCents === 0) return false;
-    if (order.platformDisputeOpenedAt || order.paymentStatus === "disputed") {
-      return false;
-    }
-    return (
-      order.status === "accepted" ||
-      order.status === "ready_for_pickup" ||
-      order.status === "completed"
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -297,137 +208,45 @@ export function OrdersScreen({ navigation }: Props) {
           </Text>
         }
         renderItem={({ item }) => {
-          // Selling tab = seller actions. Seed demo orders may still list
-          // sellerUserId as the synthetic seed seller until accept adopts them.
           const isSeller = roleTab === "selling";
+          const label = statusLabel(item);
           return (
-            <View style={styles.card}>
-              <Text style={styles.title}>{orderTitle(item)}</Text>
-              {orderLines(item).length > 1
-                ? orderLines(item).map(line => (
-                    <Text key={line.listingId} style={styles.meta}>
-                      {line.quantity}× {line.listing?.title ?? line.title}
-                    </Text>
-                  ))
-                : null}
-              <Text style={styles.meta}>
-                {showPrices
-                  ? `$${(item.priceCents / 100).toFixed(2)} · `
-                  : ""}
-                {statusLabel(item)}
-                {isSeller && isDropOffOverdue(item) ? (
-                  <Text style={styles.overdue}> Overdue</Text>
-                ) : null}
+            <Pressable
+              style={styles.card}
+              onPress={() =>
+                navigation.navigate("OrderDetail", { orderId: item.id })
+              }>
+              <View style={styles.cardHeader}>
+                <Text style={styles.title} numberOfLines={2}>
+                  {orderTitle(item)}
+                </Text>
+                <Text style={styles.chevron}>›</Text>
+              </View>
+              <Text style={styles.orderId} numberOfLines={1}>
+                Order ID: {item.id}
               </Text>
-              {item.exchangeZoneName ? (
+              {showPrices || label || (isSeller && isDropOffOverdue(item)) ? (
                 <Text style={styles.meta}>
+                  {showPrices
+                    ? `$${(item.priceCents / 100).toFixed(2)}${
+                        label ? " · " : ""
+                      }`
+                    : ""}
+                  {label ?? ""}
+                  {isSeller && isDropOffOverdue(item) ? (
+                    <Text style={styles.overdue}> Overdue</Text>
+                  ) : null}
+                </Text>
+              ) : null}
+              {item.exchangeZoneName ? (
+                <Text style={styles.meta} numberOfLines={2}>
                   Exchange Zone: {item.exchangeZoneName}
                   {item.exchangeZoneAddress
                     ? ` · ${item.exchangeZoneAddress}`
                     : ""}
                 </Text>
               ) : null}
-              {item.status === "ready_for_pickup" && item.pickupLinkExpiresAt ? (
-                <Text style={styles.meta}>
-                  Pick up by {new Date(item.pickupLinkExpiresAt).toLocaleString()}
-                  {showPrices && item.priceCents > 0
-                    ? " — after that, escrow releases to the seller"
-                    : pantryMode || item.priceCents === 0
-                      ? " — after that the order may close as a no-show"
-                      : ""}
-                </Text>
-              ) : null}
-
-              {item.status === "ready_for_pickup" && item.pickupLinkCode ? (
-                <View style={styles.linkBox}>
-                  <Text style={styles.linkLabel}>Pickup link</Text>
-                  <Text style={styles.linkCode} selectable>
-                    {item.pickupLinkCode}
-                  </Text>
-                  {!isSeller ? (
-                    <Text style={styles.linkHint}>
-                      Long-press to copy, then open Pick up and paste if needed.
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {item.dropOffPhotoUrl &&
-              (item.status === "ready_for_pickup" ||
-                item.status === "completed") ? (
-                <View style={styles.photoBox}>
-                  <Text style={styles.linkLabel}>Compartment photo</Text>
-                  <Image
-                    source={{ uri: mediaUrl(item.dropOffPhotoUrl)! }}
-                    style={styles.dropOffPhoto}
-                  />
-                </View>
-              ) : null}
-
-              {(item.platformDisputeOpenedAt ||
-                item.paymentStatus === "disputed") &&
-              item.priceCents > 0 &&
-              !pantryMode ? (
-                <Text style={styles.disputeBanner}>
-                  Dispute open
-                  {item.platformDisputeReason
-                    ? `: ${item.platformDisputeReason}`
-                    : ""}
-                  . Escrow frozen until ops review.
-                </Text>
-              ) : null}
-
-              <View style={styles.actions}>
-                {isSeller && item.status === "pending_accept" ? (
-                  <Pressable
-                    style={styles.primary}
-                    onPress={() => void onAccept(item)}>
-                    <Text style={styles.primaryText}>Accept order</Text>
-                  </Pressable>
-                ) : null}
-
-                {isSeller && item.status === "accepted" ? (
-                  <Pressable
-                    style={styles.primary}
-                    onPress={() =>
-                      navigation.navigate("DropOff", { orderId: item.id })
-                    }>
-                    <Text style={styles.primaryText}>
-                      {item.priceCents === 0
-                        ? "Drop off basket"
-                        : "Drop off item"}
-                    </Text>
-                  </Pressable>
-                ) : null}
-
-                {!isSeller && item.status === "ready_for_pickup" ? (
-                  <Pressable
-                    style={styles.primary}
-                    onPress={() =>
-                      navigation.navigate("Pickup", { orderId: item.id })
-                    }>
-                    <Text style={styles.primaryText}>Pick up item</Text>
-                  </Pressable>
-                ) : null}
-
-                {(item.status === "pending_accept" ||
-                  item.status === "accepted") && (
-                  <Pressable
-                    style={styles.secondary}
-                    onPress={() => void onCancel(item)}>
-                    <Text style={styles.secondaryText}>Cancel</Text>
-                  </Pressable>
-                )}
-
-                {canDispute(item) ? (
-                  <Pressable
-                    style={styles.secondary}
-                    onPress={() => onDispute(item)}>
-                    <Text style={styles.secondaryText}>Open dispute</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
+            </Pressable>
           );
         }}
       />
@@ -512,9 +331,27 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 10,
   },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
   title: {
+    flex: 1,
     fontSize: 16,
     fontWeight: "600",
+  },
+  chevron: {
+    fontSize: 22,
+    lineHeight: 22,
+    color: "#9ca3af",
+    fontWeight: "300",
+  },
+  orderId: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4b5563",
   },
   meta: {
     marginTop: 4,
@@ -524,78 +361,5 @@ const styles = StyleSheet.create({
   overdue: {
     color: "#9a3412",
     fontWeight: "700",
-  },
-  disputeBanner: {
-    marginTop: 10,
-    backgroundColor: "#fff7ed",
-    color: "#9a3412",
-    fontSize: 13,
-    lineHeight: 18,
-    padding: 10,
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  linkBox: {
-    marginTop: 10,
-    backgroundColor: "#f3f4f6",
-    borderRadius: 8,
-    padding: 10,
-  },
-  photoBox: {
-    marginTop: 10,
-  },
-  dropOffPhoto: {
-    width: "100%",
-    height: 160,
-    borderRadius: 8,
-    backgroundColor: "#e5e7eb",
-  },
-  linkLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#5c6370",
-    textTransform: "uppercase",
-    marginBottom: 4,
-  },
-  linkCode: {
-    fontSize: 12,
-    fontFamily: "Menlo",
-    fontWeight: "600",
-  },
-  linkHint: {
-    marginTop: 6,
-    fontSize: 12,
-    color: "#5c6370",
-    lineHeight: 16,
-  },
-  actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 12,
-  },
-  primary: {
-    flexGrow: 1,
-    backgroundColor: "#111827",
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: "center",
-  },
-  primaryText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  secondary: {
-    flexGrow: 1,
-    backgroundColor: "#f3f4f6",
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: "center",
-  },
-  secondaryText: {
-    color: "#111827",
-    fontWeight: "600",
   },
 });

@@ -88,10 +88,12 @@ function enrichOrder(order: Order) {
     ...line,
     listing: getDb().listings.find(l => l.id === line.listingId) ?? null,
   }));
+  const buyer = getDb().profiles.find(p => p.userId === order.buyerUserId);
   return {
     ...order,
     items,
     listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
+    buyerEmail: buyer?.email ?? null,
   };
 }
 
@@ -350,13 +352,13 @@ marketplaceRouter.post(
     const parsed = z
       .object({
         delta: z.number().int().min(-500).max(500),
-        reason: z.string().trim().min(2).max(200),
+        reason: z.string().trim().max(200).optional(),
       })
       .safeParse(req.body ?? {});
     if (!parsed.success) {
       res.status(400).json({
         code: "invalid_body",
-        message: "delta and reason required.",
+        message: "delta required.",
       });
       return;
     }
@@ -386,7 +388,7 @@ marketplaceRouter.post(
           row,
           user.userId,
           parsed.data.delta,
-          parsed.data.reason,
+          parsed.data.reason ?? "",
           ts,
         );
         if (!db.stockAdjustments) db.stockAdjustments = [];
@@ -401,10 +403,7 @@ marketplaceRouter.post(
       const code = (err as Error).message;
       res.status(400).json({
         code,
-        message:
-          code === "invalid_reason"
-            ? "Enter a short reason for the adjustment."
-            : "Could not adjust stock.",
+        message: "Could not adjust stock.",
       });
       return;
     }

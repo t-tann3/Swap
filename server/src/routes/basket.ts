@@ -102,7 +102,7 @@ basketRouter.post("/me/basket/items", requireAuth, async (req, res) => {
       if (!listing) {
         throw Object.assign(new Error("not_found"), { status: 404 });
       }
-      if (listing.sellerUserId === userId) {
+      if (listing.sellerUserId === userId && !isPantryMode()) {
         throw Object.assign(new Error("own_listing"), { status: 400 });
       }
       const available = listingAvailableUnits(listing);

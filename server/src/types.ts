@@ -141,12 +141,13 @@ export interface PantrySettings {
   updatedAt: string;
 }
 
-/** Seller stock ledger entry (adjustments with reason). */
+/** Seller stock ledger entry. */
 export interface StockAdjustment {
   id: string;
   listingId: string;
   sellerUserId: string;
   delta: number;
+  /** Optional note; may be empty. */
   reason: string;
   previousQty: number;
   nextQty: number;
