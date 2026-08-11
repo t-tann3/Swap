@@ -45,7 +45,7 @@ const STATUS_BUCKETS: {
   },
   {
     id: "ready_for_pickup",
-    label: "Ready for Pickup",
+    label: "Ready",
     emptyBuying: "Nothing ready for pickup.",
     emptySelling: "No orders waiting on buyer pickup.",
     statuses: ["ready_for_pickup"],
@@ -78,10 +78,10 @@ function statusLabel(order: Order): string | null {
     case "completed":
       if (order.completedReason === "no_show") {
         return pantryOrder
-          ? "Completed — no-show"
-          : "Completed — buyer no-show (paid to seller)";
+          ? "No-show"
+          : "Buyer no-show (paid to seller)";
       }
-      return "Completed";
+      return null;
     case "cancelled":
       return "Cancelled";
     default:
@@ -168,9 +168,6 @@ export function OrdersScreen({ navigation }: Props) {
 
       <View style={styles.subTabs}>
         {STATUS_BUCKETS.map(bucket => {
-          const count = roleOrders.filter(o =>
-            bucket.statuses.includes(o.status),
-          ).length;
           const on = statusBucket === bucket.id;
           return (
             <Pressable
@@ -181,7 +178,6 @@ export function OrdersScreen({ navigation }: Props) {
                 style={[styles.subTabText, on && styles.subTabTextOn]}
                 numberOfLines={1}>
                 {bucket.label}
-                {count > 0 ? ` (${count})` : ""}
               </Text>
             </Pressable>
           );
@@ -210,43 +206,57 @@ export function OrdersScreen({ navigation }: Props) {
         renderItem={({ item }) => {
           const isSeller = roleTab === "selling";
           const label = statusLabel(item);
+          const canPickUp =
+            !isSeller && item.status === "ready_for_pickup";
           return (
-            <Pressable
-              style={styles.card}
-              onPress={() =>
-                navigation.navigate("OrderDetail", { orderId: item.id })
-              }>
-              <View style={styles.cardHeader}>
-                <Text style={styles.title} numberOfLines={2}>
-                  {orderTitle(item)}
+            <View style={styles.card}>
+              <Pressable
+                onPress={() =>
+                  navigation.navigate("OrderDetail", { orderId: item.id })
+                }>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.title} numberOfLines={2}>
+                    {orderTitle(item)}
+                  </Text>
+                  <Text style={styles.chevron}>›</Text>
+                </View>
+                <Text style={styles.orderId} numberOfLines={1}>
+                  Order ID: {item.id}
                 </Text>
-                <Text style={styles.chevron}>›</Text>
-              </View>
-              <Text style={styles.orderId} numberOfLines={1}>
-                Order ID: {item.id}
-              </Text>
-              {showPrices || label || (isSeller && isDropOffOverdue(item)) ? (
-                <Text style={styles.meta}>
-                  {showPrices
-                    ? `$${(item.priceCents / 100).toFixed(2)}${
-                        label ? " · " : ""
-                      }`
-                    : ""}
-                  {label ?? ""}
-                  {isSeller && isDropOffOverdue(item) ? (
-                    <Text style={styles.overdue}> Overdue</Text>
-                  ) : null}
-                </Text>
+                {showPrices || label || (isSeller && isDropOffOverdue(item)) ? (
+                  <Text style={styles.meta}>
+                    {showPrices
+                      ? `$${(item.priceCents / 100).toFixed(2)}${
+                          label ? " · " : ""
+                        }`
+                      : ""}
+                    {label ?? ""}
+                    {isSeller && isDropOffOverdue(item) ? (
+                      <Text style={styles.overdue}> Overdue</Text>
+                    ) : null}
+                  </Text>
+                ) : null}
+                {item.exchangeZoneName ? (
+                  <Text style={styles.meta} numberOfLines={2}>
+                    Exchange Zone: {item.exchangeZoneName}
+                    {item.exchangeZoneAddress
+                      ? ` · ${item.exchangeZoneAddress}`
+                      : ""}
+                  </Text>
+                ) : null}
+              </Pressable>
+              {canPickUp ? (
+                <Pressable
+                  style={styles.pickupBtn}
+                  onPress={() =>
+                    navigation.navigate("Pickup", { orderId: item.id })
+                  }>
+                  <Text style={styles.pickupBtnText}>
+                    {item.priceCents === 0 ? "Pick up basket" : "Pick up item"}
+                  </Text>
+                </Pressable>
               ) : null}
-              {item.exchangeZoneName ? (
-                <Text style={styles.meta} numberOfLines={2}>
-                  Exchange Zone: {item.exchangeZoneName}
-                  {item.exchangeZoneAddress
-                    ? ` · ${item.exchangeZoneAddress}`
-                    : ""}
-                </Text>
-              ) : null}
-            </Pressable>
+            </View>
           );
         }}
       />
@@ -361,5 +371,17 @@ const styles = StyleSheet.create({
   overdue: {
     color: "#9a3412",
     fontWeight: "700",
+  },
+  pickupBtn: {
+    marginTop: 12,
+    backgroundColor: "#111827",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  pickupBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });

@@ -301,7 +301,7 @@ export default function OrderDetailPage() {
               href={`/orders/${order.id}/pickup`}
               className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white"
             >
-              Pick up item
+              {order.priceCents === 0 ? "Pick up basket" : "Pick up item"}
             </Link>
           ) : null}
           {(order.status === "pending_accept" ||

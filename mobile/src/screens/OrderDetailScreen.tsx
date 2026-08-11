@@ -320,7 +320,9 @@ export function OrderDetailScreen({ navigation, route }: Props) {
             onPress={() =>
               navigation.navigate("Pickup", { orderId: order.id })
             }>
-            <Text style={styles.primaryText}>Pick up item</Text>
+            <Text style={styles.primaryText}>
+              {order.priceCents === 0 ? "Pick up basket" : "Pick up item"}
+            </Text>
           </Pressable>
         ) : null}
 

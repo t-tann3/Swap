@@ -35,7 +35,7 @@ const STATUS_BUCKETS: {
   },
   {
     id: "ready_for_pickup",
-    label: "Ready for Pickup",
+    label: "Ready",
     emptyBuying: "Nothing ready for pickup.",
     emptySelling: "No orders waiting on buyer pickup.",
     statuses: ["ready_for_pickup"],
@@ -68,10 +68,10 @@ function statusLabel(order: Order): string | null {
     case "completed":
       if (order.completedReason === "no_show") {
         return pantryOrder
-          ? "Completed — no-show"
-          : "Completed — buyer no-show (paid to seller)";
+          ? "No-show"
+          : "Buyer no-show (paid to seller)";
       }
-      return "Completed";
+      return null;
     case "cancelled":
       return "Cancelled";
     default:
@@ -144,9 +144,6 @@ export default function OrdersPage() {
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {STATUS_BUCKETS.map(bucket => {
-          const count = roleOrders.filter(o =>
-            bucket.statuses.includes(o.status),
-          ).length;
           const on = statusBucket === bucket.id;
           return (
             <button
@@ -160,7 +157,6 @@ export default function OrdersPage() {
               }`}
             >
               {bucket.label}
-              {count > 0 ? ` (${count})` : ""}
             </button>
           );
         })}
@@ -170,43 +166,57 @@ export default function OrdersPage() {
         {data.map(item => {
           const isSeller = roleTab === "selling";
           const label = statusLabel(item);
+          const canPickUp =
+            !isSeller && item.status === "ready_for_pickup";
           return (
-            <Link
+            <div
               key={item.id}
-              href={`/orders/${item.id}`}
-              className="block rounded-xl bg-white p-4 shadow-sm transition hover:bg-zinc-50"
+              className="rounded-xl bg-white p-4 shadow-sm"
             >
-              <div className="flex items-start justify-between gap-3">
-                <h2 className="font-semibold">{orderTitle(item)}</h2>
-                <span className="text-xl font-light text-zinc-400">›</span>
-              </div>
-              <p className="mt-1 text-xs font-semibold text-zinc-600">
-                Order ID: {item.id}
-              </p>
-              {showPrices || label || (isSeller && isDropOffOverdue(item)) ? (
-                <p className="mt-1 text-sm text-zinc-500">
-                  {showPrices
-                    ? `$${(item.priceCents / 100).toFixed(2)}${
-                        label ? " · " : ""
-                      }`
-                    : ""}
-                  {label ?? ""}
-                  {isSeller && isDropOffOverdue(item) ? (
-                    <span className="ml-2 font-semibold text-amber-800">
-                      Overdue
-                    </span>
-                  ) : null}
+              <Link
+                href={`/orders/${item.id}`}
+                className="block transition hover:opacity-90"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="font-semibold">{orderTitle(item)}</h2>
+                  <span className="text-xl font-light text-zinc-400">›</span>
+                </div>
+                <p className="mt-1 text-xs font-semibold text-zinc-600">
+                  Order ID: {item.id}
                 </p>
+                {showPrices || label || (isSeller && isDropOffOverdue(item)) ? (
+                  <p className="mt-1 text-sm text-zinc-500">
+                    {showPrices
+                      ? `$${(item.priceCents / 100).toFixed(2)}${
+                          label ? " · " : ""
+                        }`
+                      : ""}
+                    {label ?? ""}
+                    {isSeller && isDropOffOverdue(item) ? (
+                      <span className="ml-2 font-semibold text-amber-800">
+                        Overdue
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
+                {item.exchangeZoneName ? (
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Exchange Zone: {item.exchangeZoneName}
+                    {item.exchangeZoneAddress
+                      ? ` · ${item.exchangeZoneAddress}`
+                      : ""}
+                  </p>
+                ) : null}
+              </Link>
+              {canPickUp ? (
+                <Link
+                  href={`/orders/${item.id}/pickup`}
+                  className="mt-3 block rounded-lg bg-zinc-900 px-3 py-2.5 text-center text-sm font-semibold text-white"
+                >
+                  {item.priceCents === 0 ? "Pick up basket" : "Pick up item"}
+                </Link>
               ) : null}
-              {item.exchangeZoneName ? (
-                <p className="mt-1 text-sm text-zinc-500">
-                  Exchange Zone: {item.exchangeZoneName}
-                  {item.exchangeZoneAddress
-                    ? ` · ${item.exchangeZoneAddress}`
-                    : ""}
-                </p>
-              ) : null}
-            </Link>
+            </div>
           );
         })}
         {data.length === 0 ? (
