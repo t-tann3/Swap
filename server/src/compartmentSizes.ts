@@ -3,6 +3,9 @@
  * Exterior: 76" H × 37.5" W × 23" D, 18 doors / 2 columns.
  * Every Swap listing must fit a compartment; nothing larger than Large.
  *
+ * User-facing copy uses everyday references (carry-on suitcases).
+ * Numeric max dims stay for internal validation / Relai size mapping.
+ *
  * `relaiSize` is passed to Relai unlock so the platform opens a matching door.
  */
 export const COMPARTMENT_SIZES = [
@@ -10,6 +13,8 @@ export const COMPARTMENT_SIZES = [
     id: "S",
     label: "Small",
     relaiSize: "S",
+    /** Shown to sellers/buyers instead of inch dimensions. */
+    fitGuide: "About a backpack or shoe box",
     maxHeightIn: 6,
     maxWidthIn: 16,
     maxDepthIn: 21,
@@ -19,19 +24,21 @@ export const COMPARTMENT_SIZES = [
     id: "M",
     label: "Medium",
     relaiSize: "M",
+    fitGuide: "About 1 carry-on suitcase",
     maxHeightIn: 12,
     maxWidthIn: 16,
     maxDepthIn: 21,
-    description: "Standard door — clothing folds, headphones, desk items",
+    description: "Standard door — clothing, headphones, desk items",
   },
   {
     id: "L",
     label: "Large",
     relaiSize: "L",
+    fitGuide: "About 2 carry-on suitcases",
     maxHeightIn: 24,
     maxWidthIn: 16,
     maxDepthIn: 21,
-    description: "Tall door — jackets, larger boxes (still ≤ 21\" deep)",
+    description: "Tall door — jackets and larger boxes that still fit a door",
   },
 ] as const;
 

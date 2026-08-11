@@ -64,8 +64,9 @@ export default function ListingDetailPage() {
       </div>
       <p className="mt-4 text-zinc-700 leading-relaxed">{listing.description}</p>
       <p className="mt-2 text-sm text-zinc-500">
-        Fits a Relai Exchange Zone {listing.compartmentSize} compartment — items
-        larger than a Full Tower door cannot be listed.
+        Must fit a Relai Exchange Zone compartment (
+        {formatCompartmentSize(listing.compartmentSize)}). Larger items cannot
+        be listed.
       </p>
       <p className="mt-3 text-sm text-zinc-500">
         Seller: {listing.sellerName ?? listing.sellerEmail ?? "Seller"}

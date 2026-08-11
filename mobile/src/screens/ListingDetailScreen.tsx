@@ -120,7 +120,7 @@ export function ListingDetailScreen({ route, navigation }: Props) {
       </View>
       <Text style={styles.body}>{listing.description}</Text>
       <Text style={styles.meta}>
-        Must fit a Relai Exchange Zone {listing.compartmentSize} compartment.
+        Must fit: {formatCompartmentSize(listing.compartmentSize)}.
       </Text>
       <Text style={styles.meta}>Pickup area: {listing.locationLabel}</Text>
       <Text style={styles.meta}>

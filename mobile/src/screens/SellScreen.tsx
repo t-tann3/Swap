@@ -98,8 +98,8 @@ export function SellScreen({ navigation }: Props) {
         <View style={styles.form}>
           <Text style={styles.heading}>Post an item</Text>
           <Text style={styles.help}>
-            Items must fit a Relai Exchange Zone Full Tower door (max about
-            24″×16″×21″). Pick the smallest compartment that fits.
+            Items must fit a Relai Exchange Zone compartment. Pick the smallest
+            size using the suitcase guide — Large is about 2 carry-ons.
           </Text>
           <TextInput
             style={styles.input}
@@ -149,8 +149,7 @@ export function SellScreen({ navigation }: Props) {
                 style={[styles.sizeCard, active && styles.sizeCardOn]}
                 onPress={() => setCompartmentSize(size.id)}>
                 <Text style={styles.sizeTitle}>
-                  {size.label} · ≤ {size.maxHeightIn}×{size.maxWidthIn}×
-                  {size.maxDepthIn}&quot;
+                  {size.label} · {size.fitGuide}
                 </Text>
                 <Text style={styles.sizeDesc}>{size.description}</Text>
               </Pressable>

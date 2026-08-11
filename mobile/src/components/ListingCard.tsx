@@ -32,7 +32,15 @@ export function ListingCard({
         </View>
         <View style={styles.tagRow}>
           <Text style={styles.categoryTag}>{item.category}</Text>
-          <Text style={styles.sizeTag}>Size {item.compartmentSize ?? "?"}</Text>
+          <Text style={styles.sizeTag}>
+            {item.compartmentSize === "S"
+              ? "Small · backpack"
+              : item.compartmentSize === "M"
+                ? "Medium · 1 carry-on"
+                : item.compartmentSize === "L"
+                  ? "Large · 2 carry-ons"
+                  : "Size ?"}
+          </Text>
           <Text style={styles.meta}>
             {item.condition.replace("_", " ")}
             {rightLabel ? ` · ${rightLabel}` : ""}

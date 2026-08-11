@@ -80,8 +80,8 @@ export default function SellPage() {
       <form onSubmit={onSubmit} className="rounded-2xl bg-white p-5 shadow-sm">
         <h1 className="text-2xl font-bold">Post an item</h1>
         <p className="mt-2 text-sm text-zinc-600">
-          Every item must fit a Relai Exchange Zone Full Tower compartment (max
-          usable about 24″×16″×21″). Choose the smallest door that fits.
+          Every item must fit a Relai Exchange Zone compartment. Choose the
+          smallest size using the suitcase guide — Large is about 2 carry-ons.
         </p>
         <div className="mt-4 space-y-3">
           <input
@@ -140,8 +140,7 @@ export default function SellPage() {
                   }`}
                 >
                   <p className="font-semibold">
-                    {size.label} · max {size.maxHeightIn}×{size.maxWidthIn}×
-                    {size.maxDepthIn}&quot;
+                    {size.label} · {size.fitGuide}
                   </p>
                   <p className="mt-1 text-sm text-zinc-600">{size.description}</p>
                 </button>

@@ -37,7 +37,13 @@ export function ListingCard({
             {item.category}
           </span>
           <span className="rounded bg-zinc-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-zinc-700">
-            Size {item.compartmentSize ?? "?"}
+            {item.compartmentSize === "S"
+              ? "Small · backpack"
+              : item.compartmentSize === "M"
+                ? "Medium · 1 carry-on"
+                : item.compartmentSize === "L"
+                  ? "Large · 2 carry-ons"
+                  : "Size ?"}
           </span>
           <span className="text-xs text-zinc-500 capitalize">
             {item.condition.replace("_", " ")}
