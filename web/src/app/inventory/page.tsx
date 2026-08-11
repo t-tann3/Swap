@@ -61,7 +61,7 @@ export default function InventoryPage() {
   if (!isSeller) {
     return (
       <div className="rounded-xl bg-white p-6">
-        <h1 className="text-lg font-semibold">Seller role required</h1>
+        <h1 className="text-lg font-semibold">Pantry role required</h1>
       </div>
     );
   }

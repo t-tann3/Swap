@@ -80,7 +80,7 @@ function PaymentStep({
     <div className="mt-6 space-y-4 rounded-xl bg-white p-4 shadow-sm">
       <h2 className="text-lg font-semibold">Payment</h2>
       <p className="text-sm text-zinc-600">
-        Card is authorized now. Swap captures and pays the seller when you pick
+        Card is authorized now. Swap captures and pays the pantry when you pick
         up (${(listing.priceCents / 100).toFixed(2)} held in escrow).
       </p>
       <PaymentElement />

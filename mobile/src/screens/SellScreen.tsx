@@ -56,9 +56,9 @@ export function SellScreen({ navigation, route }: Props) {
   if (!profile?.roles.includes("seller")) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyTitle}>Seller role required</Text>
+        <Text style={styles.emptyTitle}>Pantry role required</Text>
         <Text style={styles.emptyBody}>
-          Enable Seller in Account to post items.
+          Enable Pantry in Account to post items.
         </Text>
       </View>
     );
@@ -127,7 +127,9 @@ export function SellScreen({ navigation, route }: Props) {
       setScanNote(null);
       Alert.alert(
         "Posted",
-        pantryMode ? "Food listed for pantry." : "Your listing is live for buyers.",
+        pantryMode
+          ? "Food listed for pantry."
+          : "Your listing is live for neighbors.",
       );
     } catch (err) {
       Alert.alert(

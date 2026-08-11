@@ -92,7 +92,7 @@ paymentsRouter.post("/connect/onboard", requireAuth, async (req, res) => {
   if (!profile.roles.includes("seller")) {
     res.status(403).json({
       code: "seller_required",
-      message: "Enable the seller role before setting up payouts.",
+      message: "Enable the Pantry role before setting up payouts.",
     });
     return;
   }
@@ -141,7 +141,7 @@ paymentsRouter.post("/payment-intents", requireAuth, async (req, res) => {
   if (!profile?.roles.includes("buyer")) {
     res.status(403).json({
       code: "buyer_required",
-      message: "Buyer role required to pay.",
+      message: "Neighbor role required to pay.",
     });
     return;
   }

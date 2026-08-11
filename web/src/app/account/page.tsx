@@ -116,19 +116,25 @@ export default function AccountPage() {
 
       <h2 className="mt-8 text-lg font-semibold">Using app as</h2>
       <p className="mt-1 text-sm text-zinc-600">
-        Switch persona for Browse vs Sell tools. Both roles can stay enabled.
+        Switch persona for Neighbor vs Pantry tools. Both roles can stay
+        enabled.
       </p>
       <div className="mt-3 space-y-2">
-        {(["buyer", "seller"] as const).map(mode => (
+        {(
+          [
+            ["buyer", "Neighbor"],
+            ["seller", "Pantry"],
+          ] as const
+        ).map(([mode, label]) => (
           <button
             key={mode}
             type="button"
             onClick={() => void selectMode(mode)}
-            className={`w-full rounded-xl border-2 px-4 py-3 text-left font-semibold capitalize ${
+            className={`w-full rounded-xl border-2 px-4 py-3 text-left font-semibold ${
               activeMode === mode ? "border-zinc-900" : "border-zinc-100"
             }`}
           >
-            {mode}
+            {label}
           </button>
         ))}
         {profile?.adminEligible ? (
@@ -147,7 +153,7 @@ export default function AccountPage() {
               <p className="font-semibold">Admin (operator)</p>
               <p className="mt-1 text-sm text-zinc-600">
                 {roles.includes("admin")
-                  ? "Click to hide Admin nav and ops tools. Buyer/seller stay above."
+                  ? "Click to hide Admin nav and ops tools. Neighbor/Pantry stay above."
                   : "Click to restore Admin nav and ops tools."}
               </p>
             </button>
@@ -165,10 +171,10 @@ export default function AccountPage() {
 
       {roles.includes("seller") && paymentsEnabled ? (
         <div className="mt-8">
-          <h2 className="text-lg font-semibold">Seller payouts</h2>
+          <h2 className="text-lg font-semibold">Pantry payouts</h2>
           <p className="mt-2 text-sm text-zinc-600">
-            Stripe Connect holds buyer payments until pickup, then transfers your
-            share (minus platform fee).
+            Stripe Connect holds neighbor payments until pickup, then transfers
+            your share (minus platform fee).
           </p>
           <p className="mt-2 text-sm font-medium">
             Status:{" "}
@@ -192,8 +198,8 @@ export default function AccountPage() {
 
       <h2 className="mt-8 text-lg font-semibold">Activity</h2>
       <ul className="mt-2 space-y-1 text-sm text-zinc-700">
-        <li>Purchases: {ordersAsBuyer.length}</li>
-        <li>Sales: {ordersAsSeller.length}</li>
+        <li>Neighbor orders: {ordersAsBuyer.length}</li>
+        <li>Pantry orders: {ordersAsSeller.length}</li>
         <li>Listings: {myListings.length}</li>
         <li>Favorites: {favorites.length}</li>
       </ul>

@@ -31,9 +31,9 @@ export default function SellPage() {
   if (!profile?.roles.includes("seller")) {
     return (
       <div className="rounded-xl bg-white p-6">
-        <h1 className="text-lg font-semibold">Seller role required</h1>
+        <h1 className="text-lg font-semibold">Pantry role required</h1>
         <p className="mt-2 text-zinc-600">
-          Enable Seller in Account to post items.
+          Enable Pantry in Account to post items.
         </p>
       </div>
     );

@@ -34,9 +34,9 @@ export function BrowseScreen({ navigation }: Props) {
   if (!profile?.roles.includes("buyer")) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyTitle}>Buyer role required</Text>
+        <Text style={styles.emptyTitle}>Neighbor role required</Text>
         <Text style={styles.emptyBody}>
-          Enable Buyer in Account to browse and buy items.
+          Enable Neighbor in Account to browse and pick up items.
         </Text>
       </View>
     );

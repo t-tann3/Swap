@@ -37,7 +37,7 @@ function describeDropOffError(err: unknown, pantryOrder = false): string {
       return pantryOrder
         ? "Relai is charging at the door. In the Relai portal, set Payment mode to App-managed so compartment opens are not payment-gated, then try drop-off again."
         : "Relai is charging at the door (Relai checkout mode). Swap already " +
-          "authorized the buyer via Stripe escrow — that does not pay Relai. " +
+          "authorized the neighbor via Stripe escrow — that does not pay Relai. " +
           "In the Relai portal, set Payment mode to App-managed so compartment " +
           "opens are not payment-gated, then try drop-off again.";
     }
@@ -138,8 +138,8 @@ export function DropOffScreen({ route, navigation }: Props) {
       Alert.alert(
         "Dropped off",
         dropOffPhotoUrl
-          ? "Pickup link and compartment photo saved. The buyer can view them under Ready for Pickup."
-          : "Pickup link saved. The buyer can view it under Ready for Pickup.",
+          ? "Pickup link and compartment photo saved. The neighbor can view them under Ready."
+          : "Pickup link saved. The neighbor can view it under Ready.",
         [{ text: "OK", onPress: () => navigation.goBack() }],
       );
     } catch (err) {
@@ -202,8 +202,8 @@ export function DropOffScreen({ route, navigation }: Props) {
       </Text>
       <Text style={styles.body}>
         {isPantryBasket
-          ? "Open a compartment and place the full basket inside. A compartment photo is optional (useful on a real device; the simulator has no camera). Swap attaches the one-time pickup link for the buyer."
-          : "Open a compartment and place the item inside. A compartment photo is optional (useful on a real device; the simulator has no camera). Swap attaches the one-time pickup link for the buyer."}
+          ? "Open a compartment and place the full basket inside. A compartment photo is optional (useful on a real device; the simulator has no camera). Swap attaches the one-time pickup link for the neighbor."
+          : "Open a compartment and place the item inside. A compartment photo is optional (useful on a real device; the simulator has no camera). Swap attaches the one-time pickup link for the neighbor."}
       </Text>
 
       <Text style={styles.label}>Compartment photo (optional)</Text>

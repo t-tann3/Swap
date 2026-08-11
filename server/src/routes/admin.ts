@@ -248,7 +248,7 @@ adminRouter.post("/orders/:id/force-release", async (req, res) => {
         code === "payment_disputed"
           ? "Order is disputed. Pass { overrideDispute: true } after review."
           : code === "seller_payouts_unavailable"
-            ? "Seller payouts are not ready."
+            ? "Pantry payouts are not ready."
             : "Could not force-release escrow.",
     });
   }
@@ -282,7 +282,7 @@ adminRouter.post("/orders/:id/retry-transfer", async (req, res) => {
       code,
       message:
         code === "transfer_failed"
-          ? "Transfer still failing — check seller Connect status and Stripe."
+          ? "Transfer still failing — check pantry Connect status and Stripe."
           : "Could not retry transfer.",
     });
   }

@@ -111,7 +111,7 @@ export function PickupScreen({ route, navigation }: Props) {
 
       <Text style={styles.label}>Pickup link</Text>
       <Text style={styles.help}>
-        Attached by the seller after drop-off. Paste a `relai.access…` code here
+        Attached by the pantry after drop-off. Paste a `relai.access…` code here
         if you copied it from Orders.
       </Text>
       <TextInput
@@ -132,7 +132,7 @@ export function PickupScreen({ route, navigation }: Props) {
       <Text style={styles.body}>
         {order.priceCents === 0
           ? "Resolves the open-handoff link and opens the compartment (sandbox simulated transport). Completing pickup finishes the order. If you miss the deadline, the order may close as a no-show."
-          : "Resolves the open-handoff link and opens the compartment (sandbox simulated transport). Completing pickup releases escrow to the seller. If you miss the deadline, funds still release to the seller as a no-show."}
+          : "Resolves the open-handoff link and opens the compartment (sandbox simulated transport). Completing pickup releases escrow to the pantry. If you miss the deadline, funds still release to the pantry as a no-show."}
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}

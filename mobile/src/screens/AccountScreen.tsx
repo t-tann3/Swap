@@ -101,17 +101,18 @@ export function AccountScreen() {
 
       <Text style={[styles.heading, styles.section]}>Using app as</Text>
       <Text style={styles.meta}>
-        Switch persona for Browse vs Sell tools. Both roles can stay enabled.
+        Switch persona for Neighbor vs Pantry tools. Both roles can stay
+        enabled.
       </Text>
       <Pressable
         style={[styles.chip, activeMode === "buyer" && styles.chipOn]}
         onPress={() => void selectMode("buyer")}>
-        <Text style={styles.chipText}>Buyer</Text>
+        <Text style={styles.chipText}>Neighbor</Text>
       </Pressable>
       <Pressable
         style={[styles.chip, activeMode === "seller" && styles.chipOn]}
         onPress={() => void selectMode("seller")}>
-        <Text style={styles.chipText}>Seller</Text>
+        <Text style={styles.chipText}>Pantry</Text>
       </Pressable>
       {profile?.adminEligible ? (
         <Pressable
@@ -120,7 +121,7 @@ export function AccountScreen() {
           <Text style={styles.chipText}>Admin (operator)</Text>
           <Text style={styles.meta}>
             {roles.includes("admin")
-              ? "Tap to hide Admin tab and ops tools. Buyer/seller stay above."
+              ? "Tap to hide Admin tab and ops tools. Neighbor/Pantry stay above."
               : "Tap to restore Admin tab and ops tools."}
           </Text>
         </Pressable>
@@ -128,12 +129,12 @@ export function AccountScreen() {
 
       {roles.includes("seller") && paymentsEnabled ? (
         <>
-          <Text style={[styles.heading, styles.section]}>Seller payouts</Text>
+          <Text style={[styles.heading, styles.section]}>Pantry payouts</Text>
           <Text style={styles.meta}>
             Status: {payoutsReady ? "Ready" : "Setup required"}
           </Text>
           <Text style={styles.meta}>
-            Buyer payment is held until pickup, then transferred to you.
+            Neighbor payment is held until pickup, then transferred to you.
           </Text>
           {!payoutsReady ? (
             <Pressable
@@ -149,8 +150,10 @@ export function AccountScreen() {
       ) : null}
 
       <Text style={[styles.heading, styles.section]}>Activity</Text>
-      <Text style={styles.meta}>Purchases: {ordersAsBuyer.length}</Text>
-      <Text style={styles.meta}>Sales: {ordersAsSeller.length}</Text>
+      <Text style={styles.meta}>
+        Neighbor orders: {ordersAsBuyer.length}
+      </Text>
+      <Text style={styles.meta}>Pantry orders: {ordersAsSeller.length}</Text>
       <Text style={styles.meta}>Listings: {myListings.length}</Text>
       <Text style={styles.meta}>Favorites: {favorites.length}</Text>
 

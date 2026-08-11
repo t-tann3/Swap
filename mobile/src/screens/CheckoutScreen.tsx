@@ -163,8 +163,8 @@ export function CheckoutScreen({ route, navigation }: Props) {
       Alert.alert(
         "Order placed",
         payCfg.enabled
-          ? `Payment authorized. Exchange Zone: ${selected.name}. Funds release to the seller when you pick up.`
-          : `Exchange Zone: ${selected.name}. The seller must accept, then drop off, before your pickup link appears in Orders.`,
+          ? `Payment authorized. Exchange Zone: ${selected.name}. Funds release to the pantry when you pick up.`
+          : `Exchange Zone: ${selected.name}. The pantry must accept, then drop off, before your pickup link appears in Orders.`,
         [{ text: "OK", onPress: () => navigation.popToTop() }],
       );
     } catch (err) {
@@ -210,7 +210,7 @@ export function CheckoutScreen({ route, navigation }: Props) {
       {paymentsOn ? (
         <Text style={styles.hint}>
           Next you’ll authorize payment on a Stripe sheet. The order is placed
-          only after the card is authorized; the seller can then accept.
+          only after the card is authorized; the pantry can then accept.
         </Text>
       ) : null}
       <FlatList

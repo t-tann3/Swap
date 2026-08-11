@@ -60,7 +60,7 @@ const PILOT_RUNBOOK = [
   "Turn on Pantry mode below; set default patron cap and basket hold TTL.",
   "Seed or create pantry listings with stock + per-item max on Sell.",
   "Walk a patron: Browse → Basket → Checkout → Placed order.",
-  "Seller: Orders → Accept → Drop off basket → Ready for pickup → Completed.",
+  "Pantry: Orders → Accept → Drop off basket → Ready for pickup → Completed.",
   "Complete or let no-show sweep finish; check Report numbers.",
   "Use Patrons to raise caps or block a user if needed.",
   "Run sweeps if holds look stuck; abandon TTL clears idle baskets.",
@@ -69,7 +69,7 @@ const PILOT_RUNBOOK = [
 const MARKETPLACE_RUNBOOK = [
   "Confirm Relai and Stripe keys in server env.",
   "Turn pantry mode off so commerce and escrow are active.",
-  "Sellers complete Stripe Connect payouts from Account.",
+  "Pantry operators complete Stripe Connect payouts from Account.",
   "Use Escrow tab for stuck transfers, disputes, and holds.",
 ];
 
@@ -485,7 +485,7 @@ export default function AdminPage() {
             <div>
               <h2 className="text-lg font-semibold">Patron accounts</h2>
               <p className="mt-1 text-sm text-zinc-600">
-                Everyone with buyer or seller role — {patrons.length} account
+                Everyone with Neighbor or Pantry role — {patrons.length} account
                 {patrons.length === 1 ? "" : "s"} on the platform.
               </p>
             </div>
@@ -531,7 +531,7 @@ export default function AdminPage() {
                     </p>
                     <p className="mt-1 text-xs text-zinc-500">
                       Roles: {p.roles.join(", ") || "none"}
-                      {p.isPantrySeller ? " · pantry seller" : ""}
+                      {p.isPantrySeller ? " · pantry" : ""}
                     </p>
                     <p className="mt-1 text-xs text-zinc-500">
                       Cap {p.allocation?.used ?? 0}/{p.allocation?.cap ?? "—"}
@@ -541,7 +541,7 @@ export default function AdminPage() {
                         ? ` · ${p.activity?.openAsBuyer} open`
                         : ""}
                       {(p.activity?.ordersAsSeller ?? 0) > 0
-                        ? ` · ${p.activity?.ordersAsSeller} as seller`
+                        ? ` · ${p.activity?.ordersAsSeller} as pantry`
                         : ""}
                     </p>
                     <p className="mt-1 text-xs text-zinc-400">
@@ -683,7 +683,8 @@ export default function AdminPage() {
                   </li>
                   <li>Payment: {order.paymentStatus ?? "—"}</li>
                   <li>
-                    Buyer: {order.buyerUserId} · Seller: {order.sellerUserId}
+                    Neighbor: {order.buyerUserId} · Pantry:{" "}
+                    {order.sellerUserId}
                   </li>
                   <li>Created: {new Date(order.createdAt).toLocaleString()}</li>
                   <li>
@@ -721,7 +722,7 @@ export default function AdminPage() {
                           }
                           className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
                         >
-                          Dispute → refund buyer
+                          Dispute → refund neighbor
                         </button>
                         <button
                           type="button"
@@ -735,7 +736,7 @@ export default function AdminPage() {
                           }
                           className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
                         >
-                          Dispute → release seller
+                          Dispute → release pantry
                         </button>
                         <button
                           type="button"

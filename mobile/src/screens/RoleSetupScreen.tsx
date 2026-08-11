@@ -36,15 +36,19 @@ export function RoleSetupScreen() {
       <Pressable
         style={[styles.option, selected.includes("buyer") && styles.optionOn]}
         onPress={() => toggle("buyer")}>
-        <Text style={styles.optionTitle}>Buyer</Text>
-        <Text style={styles.optionBody}>Browse listings and buy items.</Text>
+        <Text style={styles.optionTitle}>Neighbor</Text>
+        <Text style={styles.optionBody}>
+          Browse the pantry and pick up baskets.
+        </Text>
       </Pressable>
 
       <Pressable
         style={[styles.option, selected.includes("seller") && styles.optionOn]}
         onPress={() => toggle("seller")}>
-        <Text style={styles.optionTitle}>Seller</Text>
-        <Text style={styles.optionBody}>Post items for others to buy.</Text>
+        <Text style={styles.optionTitle}>Pantry</Text>
+        <Text style={styles.optionBody}>
+          Stock the pantry and fulfill neighbor orders.
+        </Text>
       </Pressable>
 
       <Pressable

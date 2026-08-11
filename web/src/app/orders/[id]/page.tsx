@@ -18,7 +18,7 @@ function statusLabel(order: Order): string | null {
   const pantryOrder = order.priceCents === 0;
   switch (order.status) {
     case "pending_accept":
-      return pantryOrder ? "Placed — waiting for pantry" : "Waiting for seller";
+      return pantryOrder ? "Placed — waiting for pantry" : "Waiting for pantry";
     case "accepted":
       return pantryOrder
         ? "Accepted — pantry drop-off needed"
@@ -29,7 +29,7 @@ function statusLabel(order: Order): string | null {
       if (order.completedReason === "no_show") {
         return pantryOrder
           ? "Completed — no-show"
-          : "Completed — buyer no-show (paid to seller)";
+          : "Completed — neighbor no-show (paid to pantry)";
       }
       return null;
     case "cancelled":
@@ -238,7 +238,7 @@ export default function OrderDetailPage() {
               minute: "2-digit",
             })}
             {showPrices && order.priceCents > 0
-              ? " — after that, escrow releases to the seller"
+              ? " — after that, escrow releases to the pantry"
               : pantryMode || order.priceCents === 0
                 ? " — after that the order may close as a no-show"
                 : ""}

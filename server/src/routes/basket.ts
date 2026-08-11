@@ -338,7 +338,7 @@ basketRouter.post("/me/basket/checkout", requireAuth, async (req, res) => {
   if (!profile?.roles.includes("buyer")) {
     res.status(403).json({
       code: "buyer_required",
-      message: "Buyer role required to check out a pantry basket.",
+      message: "Neighbor role required to check out a pantry basket.",
     });
     return;
   }
@@ -475,7 +475,7 @@ basketRouter.post("/me/basket/checkout", requireAuth, async (req, res) => {
               : code === "item_cap_exceeded"
                 ? "An item exceeds its per-item cap. Lower the quantity and try again."
                 : code === "mixed_sellers"
-                  ? "Checkout one pantry seller at a time. Remove items from other sellers and try again."
+                  ? "Checkout one pantry at a time. Remove items from other pantries and try again."
                   : "Could not check out basket.",
     });
     return;

@@ -11,7 +11,7 @@ const marketplaceLinks = [
   { href: "/browse", label: "Browse", role: "buyer" as const },
   { href: "/basket", label: "Basket", role: "buyer" as const },
   { href: "/favorites", label: "Saved", role: "buyer" as const },
-  { href: "/sell", label: "Sell", role: "seller" as const },
+  { href: "/sell", label: "Pantry", role: "seller" as const },
   { href: "/inventory", label: "Inventory", role: "seller" as const },
   { href: "/orders", label: "Orders", role: null },
   { href: "/account", label: "Account", role: null },

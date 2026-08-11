@@ -40,8 +40,16 @@ export default function OnboardingPage() {
         <div className="mt-6 space-y-3">
           {(
             [
-              ["buyer", "Buyer", "Browse listings and buy items."],
-              ["seller", "Seller", "Post items for others to buy."],
+              [
+                "buyer",
+                "Neighbor",
+                "Browse the pantry and pick up baskets.",
+              ],
+              [
+                "seller",
+                "Pantry",
+                "Stock the pantry and fulfill neighbor orders.",
+              ],
             ] as const
           ).map(([role, title, body]) => (
             <button

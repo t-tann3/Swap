@@ -84,7 +84,7 @@ export function InventoryScreen({ navigation }: Props) {
   if (!isSeller) {
     return (
       <View style={styles.center}>
-        <Text style={styles.emptyTitle}>Seller role required</Text>
+        <Text style={styles.emptyTitle}>Pantry role required</Text>
       </View>
     );
   }

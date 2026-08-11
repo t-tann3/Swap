@@ -236,7 +236,7 @@ marketplaceRouter.post("/listings", requireAuth, async (req, res) => {
   if (!profile?.roles.includes("seller")) {
     res.status(403).json({
       code: "seller_required",
-      message: "Seller role required to post listings.",
+      message: "Pantry role required to post listings.",
     });
     return;
   }
@@ -326,7 +326,7 @@ marketplaceRouter.get("/me/inventory", requireAuth, async (req, res) => {
   if (!profile?.roles.includes("seller")) {
     res.status(403).json({
       code: "seller_required",
-      message: "Seller role required.",
+      message: "Pantry role required.",
     });
     return;
   }
@@ -452,7 +452,7 @@ marketplaceRouter.post("/listings/:id/buy", requireAuth, async (req, res) => {
   if (!profile?.roles.includes("buyer")) {
     res.status(403).json({
       code: "buyer_required",
-      message: "Buyer role required to purchase.",
+      message: "Neighbor role required to purchase.",
     });
     return;
   }
@@ -624,7 +624,7 @@ marketplaceRouter.get("/me/fulfillment", requireAuth, async (req, res) => {
   if (!profile?.roles.includes("seller")) {
     res.status(403).json({
       code: "seller_required",
-      message: "Seller role required.",
+      message: "Pantry role required.",
     });
     return;
   }
@@ -685,7 +685,7 @@ marketplaceRouter.post("/orders/:id/accept", requireAuth, async (req, res) => {
   if (!profile?.roles.includes("seller")) {
     res.status(403).json({
       code: "seller_required",
-      message: "Seller role required to accept orders.",
+      message: "Pantry role required to accept orders.",
     });
     return;
   }
@@ -695,7 +695,7 @@ marketplaceRouter.post("/orders/:id/accept", requireAuth, async (req, res) => {
     return;
   }
   if (!isOrderSeller(existing, user.userId)) {
-    res.status(403).json({ code: "forbidden", message: "Only the seller can accept." });
+    res.status(403).json({ code: "forbidden", message: "Only the pantry can accept." });
     return;
   }
   if (existing.status !== "pending_accept") {
@@ -712,7 +712,7 @@ marketplaceRouter.post("/orders/:id/accept", requireAuth, async (req, res) => {
       res.status(403).json({
         code: "seller_payouts_required",
         message:
-          "Set up Stripe payouts in Account before accepting orders. Funds release to you on buyer pickup.",
+          "Set up Stripe payouts in Account before accepting orders. Funds release to you on neighbor pickup.",
       });
       return;
     }
@@ -757,7 +757,7 @@ marketplaceRouter.post("/orders/:id/drop-off", requireAuth, async (req, res) => 
   if (!profile?.roles.includes("seller")) {
     res.status(403).json({
       code: "seller_required",
-      message: "Seller role required to drop off.",
+      message: "Pantry role required to drop off.",
     });
     return;
   }
@@ -768,7 +768,7 @@ marketplaceRouter.post("/orders/:id/drop-off", requireAuth, async (req, res) => 
     return;
   }
   if (!isOrderSeller(existing, user.userId)) {
-    res.status(403).json({ code: "forbidden", message: "Only the seller can drop off." });
+    res.status(403).json({ code: "forbidden", message: "Only the pantry can drop off." });
     return;
   }
   if (existing.status !== "accepted") {
@@ -811,7 +811,7 @@ marketplaceRouter.post("/orders/:id/complete", requireAuth, async (req, res) => 
   if (existing.buyerUserId !== user.userId) {
     res.status(403).json({
       code: "buyer_required",
-      message: "Only the buyer can confirm pickup and release escrow.",
+      message: "Only the neighbor can confirm pickup and release escrow.",
     });
     return;
   }
@@ -840,9 +840,9 @@ marketplaceRouter.post("/orders/:id/complete", requireAuth, async (req, res) => 
       code,
       message:
         code === "seller_payouts_unavailable"
-          ? "Seller must finish Stripe payout setup before funds can be released."
+          ? "Pantry must finish Stripe payout setup before funds can be released."
           : code === "payment_capture_failed"
-            ? "Could not capture the buyer's payment."
+            ? "Could not capture the neighbor's payment."
             : code === "payment_disputed"
               ? "This payment is under dispute; escrow cannot be released yet."
               : code === "escrow_busy"

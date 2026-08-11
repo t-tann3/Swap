@@ -58,7 +58,7 @@ const PILOT_RUNBOOK = [
   "Turn on Pantry mode below; set default patron cap and basket hold TTL.",
   "Seed or create pantry listings with stock + per-item max on Sell.",
   "Walk a patron: Browse → Basket → Checkout → Placed order.",
-  "Seller: Orders → Accept → Drop off basket → Ready for pickup → Completed.",
+  "Pantry: Orders → Accept → Drop off basket → Ready for pickup → Completed.",
   "Complete or let no-show sweep finish; check Report numbers.",
   "Use Patrons to raise caps or block a user if needed.",
   "Run sweeps if holds look stuck; abandon TTL clears idle baskets.",
@@ -67,7 +67,7 @@ const PILOT_RUNBOOK = [
 const MARKETPLACE_RUNBOOK = [
   "Confirm Relai and Stripe keys in server env.",
   "Turn pantry mode off so commerce and escrow are active.",
-  "Sellers complete Stripe Connect payouts from Account.",
+  "Pantry operators complete Stripe Connect payouts from Account.",
   "Use Escrow tab for stuck transfers, disputes, and holds.",
 ];
 
@@ -449,7 +449,7 @@ export function AdminScreen() {
             </Pressable>
           </View>
           <Text style={styles.cardHelp}>
-            Everyone with buyer or seller role — {patrons.length} account
+            Everyone with Neighbor or Pantry role — {patrons.length} account
             {patrons.length === 1 ? "" : "s"} on the platform.
           </Text>
           <TextInput
@@ -476,7 +476,7 @@ export function AdminScreen() {
                 <Text style={styles.meta}>{p.email ?? "No email"}</Text>
                 <Text style={styles.meta}>
                   Roles: {p.roles.join(", ") || "none"}
-                  {p.isPantrySeller ? " · pantry seller" : ""}
+                  {p.isPantrySeller ? " · pantry" : ""}
                 </Text>
                 <Text style={styles.meta}>
                   Cap {p.allocation?.used ?? 0}/{p.allocation?.cap ?? "—"} ·
@@ -485,7 +485,7 @@ export function AdminScreen() {
                     ? ` · ${p.activity?.openAsBuyer} open`
                     : ""}
                   {(p.activity?.ordersAsSeller ?? 0) > 0
-                    ? ` · ${p.activity?.ordersAsSeller} as seller`
+                    ? ` · ${p.activity?.ordersAsSeller} as pantry`
                     : ""}
                 </Text>
                 <Text style={styles.meta}>

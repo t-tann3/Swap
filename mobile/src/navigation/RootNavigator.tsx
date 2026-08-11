@@ -101,7 +101,7 @@ function SellStackNavigator() {
       <SellStack.Screen
         name="SellHome"
         component={SellScreen}
-        options={{ title: "Sell" }}
+        options={{ title: "Pantry" }}
       />
       <SellStack.Screen
         name="Inventory"
@@ -214,7 +214,7 @@ function MainTabs() {
           name="SellTab"
           component={SellStackNavigator}
           options={{
-            title: "Sell",
+            title: "Pantry",
             tabBarIcon: ({ color, size }) => (
               <Store color={color} size={size} strokeWidth={2.25} />
             ),

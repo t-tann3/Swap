@@ -22,7 +22,7 @@ const STATUS_BUCKETS: {
   {
     id: "placed",
     label: "Placed",
-    emptyBuying: "No placed orders waiting on a seller.",
+    emptyBuying: "No placed orders waiting on the pantry.",
     emptySelling: "No new orders to accept.",
     statuses: ["pending_accept"],
   },
@@ -37,14 +37,14 @@ const STATUS_BUCKETS: {
     id: "ready_for_pickup",
     label: "Ready",
     emptyBuying: "Nothing ready for pickup.",
-    emptySelling: "No orders waiting on buyer pickup.",
+    emptySelling: "No orders waiting on neighbor pickup.",
     statuses: ["ready_for_pickup"],
   },
   {
     id: "completed",
     label: "Completed",
     emptyBuying: "No completed orders yet.",
-    emptySelling: "No completed sales yet.",
+    emptySelling: "No completed pantry orders yet.",
     statuses: ["completed"],
   },
 ];
@@ -58,7 +58,7 @@ function statusLabel(order: Order): string | null {
   const pantryOrder = order.priceCents === 0;
   switch (order.status) {
     case "pending_accept":
-      return pantryOrder ? "Placed — waiting for pantry" : "Waiting for seller";
+      return pantryOrder ? "Placed — waiting for pantry" : "Waiting for pantry";
     case "accepted":
       return pantryOrder
         ? "Accepted — pantry drop-off needed"
@@ -69,7 +69,7 @@ function statusLabel(order: Order): string | null {
       if (order.completedReason === "no_show") {
         return pantryOrder
           ? "No-show"
-          : "Buyer no-show (paid to seller)";
+          : "Neighbor no-show (paid to pantry)";
       }
       return null;
     case "cancelled":
@@ -128,7 +128,7 @@ export default function OrdersPage() {
               roleTab === "buying" ? "bg-zinc-900 text-white" : "bg-white"
             }`}
           >
-            Buying
+            Neighbors
           </button>
           <button
             type="button"
@@ -137,7 +137,7 @@ export default function OrdersPage() {
               roleTab === "selling" ? "bg-zinc-900 text-white" : "bg-white"
             }`}
           >
-            Selling
+            Pantry
           </button>
         </div>
       ) : null}

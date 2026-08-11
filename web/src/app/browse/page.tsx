@@ -19,9 +19,9 @@ export default function BrowsePage() {
   if (!profile?.roles.includes("buyer")) {
     return (
       <div className="rounded-xl bg-white p-6">
-        <h1 className="text-lg font-semibold">Buyer role required</h1>
+        <h1 className="text-lg font-semibold">Neighbor role required</h1>
         <p className="mt-2 text-zinc-600">
-          Enable Buyer in Account to browse and buy items.
+          Enable Neighbor in Account to browse and pick up items.
         </p>
       </div>
     );

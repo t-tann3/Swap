@@ -9,7 +9,7 @@ export default function FavoritesPage() {
   if (!profile?.roles.includes("buyer")) {
     return (
       <div className="rounded-xl bg-white p-6">
-        <h1 className="text-lg font-semibold">Buyer role required</h1>
+        <h1 className="text-lg font-semibold">Neighbor role required</h1>
       </div>
     );
   }
