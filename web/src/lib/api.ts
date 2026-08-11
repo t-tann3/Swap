@@ -1,0 +1,91 @@
+import { getRelai } from "./relai/client";
+
+export const API_BASE_URL =
+  (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000").replace(
+    /\/$/,
+    "",
+  );
+
+export class ApiError extends Error {
+  code: string;
+  status: number;
+
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function ensureAccessToken(): Promise<string> {
+  const relai = getRelai();
+  if (!relai.auth.isSignedIn) {
+    throw new ApiError(401, "unauthorized", "Not signed in.");
+  }
+  const refreshed = await relai.auth.refresh();
+  const token = relai.auth.accessToken;
+  if (!refreshed || !token) {
+    throw new ApiError(
+      401,
+      "unauthorized",
+      "Relai session expired. Sign out and sign in again.",
+    );
+  }
+  return token;
+}
+
+export async function apiRequest<T>(
+  path: string,
+  init: RequestInit & { auth?: boolean } = {},
+): Promise<T> {
+  const { auth = false, headers, ...rest } = init;
+
+  const doFetch = async (retried: boolean): Promise<T> => {
+    const finalHeaders: Record<string, string> = {
+      Accept: "application/json",
+      ...(headers as Record<string, string> | undefined),
+    };
+
+    if (auth) {
+      const token = await ensureAccessToken();
+      finalHeaders.Authorization = `Bearer ${token}`;
+      if (rest.body && !finalHeaders["Content-Type"]) {
+        finalHeaders["Content-Type"] = "application/json";
+      }
+    } else if (rest.body && !finalHeaders["Content-Type"]) {
+      finalHeaders["Content-Type"] = "application/json";
+    }
+
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...rest,
+      headers: finalHeaders,
+    });
+
+    const text = await response.text();
+    const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+
+    if (
+      auth &&
+      !retried &&
+      response.status === 401 &&
+      getRelai().auth.isSignedIn
+    ) {
+      const refreshed = await getRelai().auth.refresh();
+      if (refreshed) {
+        return doFetch(true);
+      }
+    }
+
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        String(body.code ?? "error"),
+        String(body.message ?? `Request failed (${response.status})`),
+      );
+    }
+
+    return body as T;
+  };
+
+  return doFetch(false);
+}
