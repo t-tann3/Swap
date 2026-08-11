@@ -1,4 +1,5 @@
 import { getDb, mutateDb } from "./db.js";
+import { log } from "./logger.js";
 import {
   cancelAuthorizedPayment,
   refundEscrowPayment,
@@ -130,10 +131,10 @@ export async function ensurePickupVerifiedFromRelai(order: Order): Promise<Order
     if (err instanceof Error && err.message === "relai_secret_unconfigured") {
       throw err;
     }
-    console.warn(
-      `[escrow] Relai order poll failed order=${order.id}`,
-      err instanceof Error ? err.message : err,
-    );
+    log.warn("escrow_relai_poll_failed", {
+      orderId: order.id,
+      errMessage: err instanceof Error ? err.message : String(err),
+    });
     throw Object.assign(new Error("relai_status_unavailable"), { status: 502 });
   }
 
@@ -511,7 +512,9 @@ export function listEscrowAttentionOrders(filter?: string): Order[] {
     );
 
   const disputed = (o: Order) =>
-    o.paymentStatus === "disputed" || Boolean(o.stripeDisputeId);
+    o.paymentStatus === "disputed" ||
+    Boolean(o.stripeDisputeId) ||
+    Boolean(o.platformDisputeOpenedAt);
 
   const frozen = (o: Order) => o.adminHold;
 
@@ -562,13 +565,14 @@ export async function sweepBuyerNoShows(): Promise<{
     try {
       await finalizeOrderEscrow(order.id, "no_show");
       released += 1;
-      console.log(
-        `[escrow] no-show release order=${order.id} seller=${order.sellerUserId}`,
-      );
+      log.info("escrow_no_show_release", {
+        orderId: order.id,
+        sellerUserId: order.sellerUserId,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "unknown";
       failed.push(`${order.id}:${message}`);
-      console.warn(`[escrow] no-show failed order=${order.id}: ${message}`);
+      log.warn("escrow_no_show_failed", { orderId: order.id, errMessage: message });
     }
   }
 
@@ -603,13 +607,14 @@ export async function sweepSellerTimeouts(): Promise<{
     try {
       await voidPreDropoffEscrow(order.id, reason);
       voided += 1;
-      console.log(`[escrow] seller-timeout ${reason} order=${order.id}`);
+      log.info("escrow_seller_timeout", { orderId: order.id, reason });
     } catch (err) {
       const message = err instanceof Error ? err.message : "unknown";
       failed.push(`${order.id}:${message}`);
-      console.warn(
-        `[escrow] seller-timeout failed order=${order.id}: ${message}`,
-      );
+      log.warn("escrow_seller_timeout_failed", {
+        orderId: order.id,
+        errMessage: message,
+      });
     }
   }
 
@@ -642,9 +647,10 @@ export async function sweepStuckTransfers(): Promise<{
     } catch (err) {
       const message = err instanceof Error ? err.message : "unknown";
       failed.push(`${order.id}:${message}`);
-      console.warn(
-        `[escrow] stuck-transfer retry failed order=${order.id}: ${message}`,
-      );
+      log.warn("escrow_stuck_transfer_failed", {
+        orderId: order.id,
+        errMessage: message,
+      });
     }
   }
 
@@ -679,21 +685,83 @@ export function mapStripeDisputeStatus(status: string): DisputeStatus {
   return "under_review";
 }
 
+/**
+ * Buyer/seller opens a platform dispute while the item may be in a locker.
+ * Freezes auto escrow; admin resolves via force-refund / force-release.
+ */
+export async function openPlatformDispute(
+  orderId: string,
+  openedByUserId: string,
+  reason: string,
+): Promise<Order> {
+  const trimmed = reason.trim();
+  if (trimmed.length < 8) {
+    throw Object.assign(new Error("invalid_reason"), { status: 400 });
+  }
+
+  const existing = getDb().orders.find(o => o.id === orderId);
+  if (!existing) {
+    throw Object.assign(new Error("not_found"), { status: 404 });
+  }
+  if (
+    existing.buyerUserId !== openedByUserId &&
+    existing.sellerUserId !== openedByUserId
+  ) {
+    throw Object.assign(new Error("forbidden"), { status: 403 });
+  }
+  if (
+    existing.status !== "ready_for_pickup" &&
+    existing.status !== "completed" &&
+    existing.status !== "accepted"
+  ) {
+    throw Object.assign(new Error("invalid_status"), { status: 409 });
+  }
+  if (
+    existing.platformDisputeOpenedAt ||
+    existing.paymentStatus === "disputed"
+  ) {
+    throw Object.assign(new Error("dispute_already_open"), { status: 409 });
+  }
+
+  let order: Order | undefined;
+  await mutateDb(db => {
+    order = db.orders.find(o => o.id === orderId);
+    if (!order) {
+      throw Object.assign(new Error("not_found"), { status: 404 });
+    }
+    const ts = new Date().toISOString();
+    order.platformDisputeReason = trimmed.slice(0, 1000);
+    order.platformDisputeOpenedBy = openedByUserId;
+    order.platformDisputeOpenedAt = ts;
+    order.adminHold = true;
+    order.updatedAt = ts;
+  });
+
+  log.info("platform_dispute_opened", {
+    orderId,
+    openedByUserId,
+  });
+  return order!;
+}
+
 export function startEscrowScheduler(): void {
   const everyMs = Number(process.env.ESCROW_SWEEP_INTERVAL_MS ?? "60000");
   const interval = Number.isFinite(everyMs) && everyMs >= 15_000 ? everyMs : 60_000;
 
   const tick = () => {
     void runAllEscrowSweeps().catch(err => {
-      console.warn("[escrow] sweep error", err);
+      log.warn("escrow_sweep_error", {
+        errMessage: err instanceof Error ? err.message : String(err),
+      });
     });
   };
 
   tick();
   setInterval(tick, interval);
-  console.log(
-    `[escrow] sweeps every ${Math.round(interval / 1000)}s; ` +
-      `accept ${sellerAcceptHours()}h, drop-off ${sellerDropOffHours()}h, ` +
-      `no-show ${pickupNoShowHours()}h`,
-  );
+  log.info("escrow_scheduler_started", {
+    intervalSec: Math.round(interval / 1000),
+    acceptHours: sellerAcceptHours(),
+    dropOffHours: sellerDropOffHours(),
+    noShowHours: pickupNoShowHours(),
+  });
 }

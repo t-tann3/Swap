@@ -9,7 +9,7 @@ import {
   deadlineFromNow,
   ensurePickupVerifiedFromRelai,
   finalizeOrderEscrow,
-  refundOrderEscrow,
+  openPlatformDispute,
   resolvePickupDeadline,
   sellerAcceptHours,
   sellerDropOffHours,
@@ -139,13 +139,14 @@ marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
     return;
   }
   const user = req.user!;
-  const ts = new Date().toISOString();
-  const selfServeRoles = [...new Set(parsed.data.roles)] as MarketplaceRole[];
-  // Preserve/grant admin from allowlist only — never from request body.
+  // Ops admins cannot also be marketplace buyers/sellers.
   if (isAdminAllowlisted(user)) {
-    selfServeRoles.push("admin");
+    const profile = await syncAdminRoleForUser(user);
+    res.json(profile);
+    return;
   }
-  const roles = [...new Set(selfServeRoles)];
+  const ts = new Date().toISOString();
+  const roles = [...new Set(parsed.data.roles)] as MarketplaceRole[];
   let profile: Profile | undefined;
 
   await mutateDb(db => {
@@ -385,6 +386,9 @@ marketplaceRouter.post("/listings/:id/buy", requireAuth, async (req, res) => {
         stripeDisputeId: null,
         disputeStatus: null,
         adminHold: false,
+        platformDisputeReason: null,
+        platformDisputeOpenedBy: null,
+        platformDisputeOpenedAt: null,
         completedReason: null,
         cancelledReason: null,
         createdAt: ts,
@@ -656,8 +660,17 @@ marketplaceRouter.post("/orders/:id/cancel", requireAuth, async (req, res) => {
     return;
   }
 
-  // Pre–drop-off: void auth and cancel. After drop-off (ready for pickup):
-  // refund escrow. Completed orders stay non-cancellable.
+  // After drop-off the item may already be in a locker — no self-serve cancel.
+  // Parties must open a dispute; admin refunds / releases after review.
+  if (existing.status === "ready_for_pickup") {
+    res.status(409).json({
+      code: "in_locker_use_dispute",
+      message:
+        "This item may already be in an Exchange Zone. Open a dispute instead of cancelling — ops will refund or release after review.",
+    });
+    return;
+  }
+
   try {
     if (
       existing.status === "pending_accept" ||
@@ -674,23 +687,11 @@ marketplaceRouter.post("/orders/:id/cancel", requireAuth, async (req, res) => {
       return;
     }
 
-    if (existing.status === "ready_for_pickup") {
-      const order = await refundOrderEscrow(
-        existing.id,
-        "post_dropoff_refund",
-      );
-      res.json({
-        ...order,
-        listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
-      });
-      return;
-    }
-
     res.status(409).json({
       code: "invalid_status",
       message:
         existing.status === "completed"
-          ? "Completed orders cannot be cancelled."
+          ? "Completed orders cannot be cancelled. Open a dispute if something is wrong."
           : existing.status === "cancelled"
             ? "This order is already cancelled."
             : `This order cannot be cancelled (status: ${existing.status}).`,
@@ -714,7 +715,10 @@ marketplaceRouter.post("/orders/:id/cancel", requireAuth, async (req, res) => {
   }
 });
 
-/** Post-drop-off: void/refund buyer funds and cancel the marketplace order. */
+/**
+ * Post-drop-off self-serve refund is disabled (item may be in a locker).
+ * Kept for API compatibility — returns the same guidance as cancel.
+ */
 marketplaceRouter.post("/orders/:id/refund", requireAuth, async (req, res) => {
   const user = req.user!;
   const existing = getDb().orders.find(o => o.id === req.params.id);
@@ -726,17 +730,35 @@ marketplaceRouter.post("/orders/:id/refund", requireAuth, async (req, res) => {
     res.status(403).json({ code: "forbidden", message: "Not your order." });
     return;
   }
-  if (existing.status !== "ready_for_pickup") {
-    res.status(409).json({
-      code: "invalid_status",
-      message:
-        "Refund is only available while the order is ready for pickup (after drop-off, before completion).",
+
+  res.status(409).json({
+    code: "in_locker_use_dispute",
+    message:
+      existing.status === "ready_for_pickup"
+        ? "Self-serve refund is disabled after drop-off because the item may be in a locker. Open a dispute so ops can refund or release safely."
+        : "Refund is only handled by ops after drop-off. Open a dispute if you need help.",
+  });
+});
+
+marketplaceRouter.post("/orders/:id/dispute", requireAuth, async (req, res) => {
+  const user = req.user!;
+  const parsed = z
+    .object({ reason: z.string().min(8).max(1000) })
+    .safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({
+      code: "invalid_body",
+      message: "Provide a dispute reason (at least 8 characters).",
     });
     return;
   }
 
   try {
-    const order = await refundOrderEscrow(existing.id, "post_dropoff_refund");
+    const order = await openPlatformDispute(
+      String(req.params.id ?? ""),
+      user.userId,
+      parsed.data.reason,
+    );
     res.json({
       ...order,
       listing: getDb().listings.find(l => l.id === order.listingId) ?? null,
@@ -747,13 +769,17 @@ marketplaceRouter.post("/orders/:id/refund", requireAuth, async (req, res) => {
     res.status(status).json({
       code,
       message:
-        code === "payment_refund_failed"
-          ? "Could not refund the payment. Try again or check Stripe."
-          : code === "payment_disputed"
-            ? "This payment is under dispute and cannot be refunded here."
-            : code === "escrow_busy"
-              ? "Escrow is busy. Try again in a moment."
-              : "Could not refund this order.",
+        code === "forbidden"
+          ? "Not your order."
+          : code === "invalid_status"
+            ? "Disputes can be opened after accept, while ready for pickup, or after completion."
+            : code === "dispute_already_open"
+              ? "A dispute is already open on this order."
+              : code === "invalid_reason"
+                ? "Provide a clearer dispute reason."
+                : code === "not_found"
+                  ? "Order not found."
+                  : "Could not open dispute.",
     });
   }
 });

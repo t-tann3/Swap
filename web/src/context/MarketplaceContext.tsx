@@ -51,6 +51,7 @@ interface MarketplaceContextValue {
   completeOrder: (orderId: string) => Promise<void>;
   cancelOrder: (orderId: string) => Promise<void>;
   refundOrder: (orderId: string) => Promise<void>;
+  disputeOrder: (orderId: string, reason: string) => Promise<void>;
   toggleFavorite: (listingId: string) => Promise<void>;
   isFavorite: (listingId: string) => boolean;
   myListings: Listing[];
@@ -245,6 +246,18 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const disputeOrder = useCallback(
+    async (orderId: string, reason: string) => {
+      await apiRequest(`/api/orders/${orderId}/dispute`, {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify({ reason }),
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
   const toggleFavorite = useCallback(
     async (listingId: string) => {
       const liked = favorites.some(f => f.id === listingId);
@@ -295,6 +308,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       completeOrder,
       cancelOrder,
       refundOrder,
+      disputeOrder,
       toggleFavorite,
       isFavorite,
       myListings,
@@ -322,6 +336,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       completeOrder,
       cancelOrder,
       refundOrder,
+      disputeOrder,
       toggleFavorite,
       isFavorite,
       myListings,

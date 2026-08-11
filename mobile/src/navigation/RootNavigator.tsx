@@ -134,6 +134,7 @@ function MainTabs() {
   const isBuyer = profile?.roles.includes("buyer") ?? false;
   const isSeller = profile?.roles.includes("seller") ?? false;
   const isAdmin = profile?.roles.includes("admin") ?? false;
+  const isAdminOnly = isAdmin && !isBuyer && !isSeller;
 
   return (
     <Tab.Navigator
@@ -188,16 +189,18 @@ function MainTabs() {
           }}
         />
       ) : null}
-      <Tab.Screen
-        name="OrdersTab"
-        component={OrdersStackNavigator}
-        options={{
-          title: "Orders",
-          tabBarIcon: ({ color, size }) => (
-            <Package color={color} size={size} strokeWidth={2.25} />
-          ),
-        }}
-      />
+      {!isAdminOnly ? (
+        <Tab.Screen
+          name="OrdersTab"
+          component={OrdersStackNavigator}
+          options={{
+            title: "Orders",
+            tabBarIcon: ({ color, size }) => (
+              <Package color={color} size={size} strokeWidth={2.25} />
+            ),
+          }}
+        />
+      ) : null}
       {isAdmin ? (
         <Tab.Screen
           name="AdminTab"

@@ -7,10 +7,12 @@ import { useMarketplace } from "../../context/MarketplaceContext";
 import { apiRequest } from "../../lib/api";
 import type { Order } from "../../lib/types";
 
-type Filter = "attention" | "stuck" | "disputed" | "frozen" | "overdue";
+type QueueFilter = "attention" | "stuck" | "disputed" | "frozen" | "overdue";
+type ViewMode = "queue" | "all";
 
-type EscrowListResponse = {
-  filter: string;
+type ListResponse = {
+  filter?: string;
+  status?: string;
   count: number;
   data: Order[];
 };
@@ -19,7 +21,8 @@ export default function AdminPage() {
   const { profile, ready } = useMarketplace();
   const router = useRouter();
   const isAdmin = profile?.roles.includes("admin") ?? false;
-  const [filter, setFilter] = useState<Filter>("attention");
+  const [view, setView] = useState<ViewMode>("queue");
+  const [filter, setFilter] = useState<QueueFilter>("attention");
   const [orders, setOrders] = useState<Order[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,12 +30,19 @@ export default function AdminPage() {
 
   const load = useCallback(async () => {
     setError(null);
-    const res = await apiRequest<EscrowListResponse>(
+    if (view === "all") {
+      const res = await apiRequest<ListResponse>(`/api/admin/orders?status=all`, {
+        auth: true,
+      });
+      setOrders(res.data);
+      return;
+    }
+    const res = await apiRequest<ListResponse>(
       `/api/admin/orders/escrow?filter=${filter}`,
       { auth: true },
     );
     setOrders(res.data);
-  }, [filter]);
+  }, [view, filter]);
 
   useEffect(() => {
     if (!ready) return;
@@ -94,7 +104,7 @@ export default function AdminPage() {
     );
   }
 
-  const filters: Filter[] = [
+  const filters: QueueFilter[] = [
     "attention",
     "disputed",
     "stuck",
@@ -107,32 +117,58 @@ export default function AdminPage() {
       <div className="rounded-2xl bg-white p-6 shadow-sm">
         <h1 className="text-2xl font-bold">Admin</h1>
         <p className="mt-2 text-sm text-zinc-600">
-          Resolve disputes and approve escrow actions. This role is separate from
-          buyer and seller.
+          Ops console — no buying or selling. Resolve escrow issues and review
+          all past orders.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          {filters.map(f => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter(f)}
-              className={`rounded-lg px-3 py-2 text-sm font-semibold capitalize ${
-                filter === f
-                  ? "bg-zinc-900 text-white"
-                  : "bg-zinc-100 text-zinc-700"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
           <button
             type="button"
-            disabled={busyId === "sweeps"}
-            onClick={() => void runSweeps()}
-            className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            onClick={() => setView("queue")}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+              view === "queue"
+                ? "bg-zinc-900 text-white"
+                : "bg-zinc-100 text-zinc-700"
+            }`}
           >
-            Run sweeps
+            Escrow queue
           </button>
+          <button
+            type="button"
+            onClick={() => setView("all")}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+              view === "all"
+                ? "bg-zinc-900 text-white"
+                : "bg-zinc-100 text-zinc-700"
+            }`}
+          >
+            All orders
+          </button>
+          {view === "queue"
+            ? filters.map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFilter(f)}
+                  className={`rounded-lg px-3 py-2 text-sm font-semibold capitalize ${
+                    filter === f
+                      ? "bg-zinc-900 text-white"
+                      : "bg-zinc-100 text-zinc-700"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))
+            : null}
+          {view === "queue" ? (
+            <button
+              type="button"
+              disabled={busyId === "sweeps"}
+              onClick={() => void runSweeps()}
+              className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              Run sweeps
+            </button>
+          ) : null}
         </div>
         {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
         {message ? <p className="mt-3 text-sm text-zinc-700">{message}</p> : null}
@@ -140,14 +176,11 @@ export default function AdminPage() {
 
       {orders.length === 0 ? (
         <div className="rounded-2xl bg-white p-6 text-sm text-zinc-600 shadow-sm">
-          No orders in this queue.
+          {view === "all" ? "No orders yet." : "No orders in this queue."}
         </div>
       ) : (
         orders.map(order => (
-          <div
-            key={order.id}
-            className="rounded-2xl bg-white p-5 shadow-sm"
-          >
+          <div key={order.id} className="rounded-2xl bg-white p-5 shadow-sm">
             <p className="font-semibold">
               {order.listing?.title ?? order.listingId}
             </p>
@@ -160,9 +193,21 @@ export default function AdminPage() {
               </li>
               <li>Payment: {order.paymentStatus ?? "—"}</li>
               <li>
+                Buyer: {order.buyerUserId} · Seller: {order.sellerUserId}
+              </li>
+              <li>
+                Created: {new Date(order.createdAt).toLocaleString()}
+              </li>
+              <li>
                 Dispute: {order.disputeStatus ?? "—"}
                 {order.stripeDisputeId ? ` (${order.stripeDisputeId})` : ""}
               </li>
+              {order.platformDisputeOpenedAt ? (
+                <li className="text-amber-800">
+                  Platform dispute by {order.platformDisputeOpenedBy}:{" "}
+                  {order.platformDisputeReason}
+                </li>
+              ) : null}
               <li>Hold: {order.adminHold ? "yes" : "no"}</li>
               {order.transferLastError ? (
                 <li className="text-red-700">
@@ -171,92 +216,105 @@ export default function AdminPage() {
               ) : null}
             </ul>
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              {order.paymentStatus === "disputed" || order.stripeDisputeId ? (
-                <>
-                  <button
-                    type="button"
-                    disabled={busyId === order.id}
-                    onClick={() =>
-                      void run(order.id, `/api/admin/orders/${order.id}/dispute/resolve`, {
-                        action: "refund",
-                      })
-                    }
-                    className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-                  >
-                    Dispute → refund buyer
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busyId === order.id}
-                    onClick={() =>
-                      void run(order.id, `/api/admin/orders/${order.id}/dispute/resolve`, {
-                        action: "release",
-                      })
-                    }
-                    className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
-                  >
-                    Dispute → release seller
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busyId === order.id}
-                    onClick={() =>
-                      void run(order.id, `/api/admin/orders/${order.id}/dispute/resolve`, {
-                        action: "clear",
-                      })
-                    }
-                    className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
-                  >
-                    Clear hold
-                  </button>
-                </>
-              ) : null}
-              <button
-                type="button"
-                disabled={busyId === order.id}
-                onClick={() =>
-                  void run(order.id, `/api/admin/orders/${order.id}/force-release`, {
-                    overrideDispute: false,
-                  })
-                }
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
-              >
-                Force release
-              </button>
-              <button
-                type="button"
-                disabled={busyId === order.id}
-                onClick={() =>
-                  void run(order.id, `/api/admin/orders/${order.id}/force-refund`)
-                }
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
-              >
-                Force refund
-              </button>
-              <button
-                type="button"
-                disabled={busyId === order.id}
-                onClick={() =>
-                  void run(order.id, `/api/admin/orders/${order.id}/retry-transfer`)
-                }
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
-              >
-                Retry transfer
-              </button>
-              <button
-                type="button"
-                disabled={busyId === order.id}
-                onClick={() =>
-                  void run(order.id, `/api/admin/orders/${order.id}/hold`, {
-                    hold: !order.adminHold,
-                  })
-                }
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
-              >
-                {order.adminHold ? "Unfreeze" : "Freeze"}
-              </button>
-            </div>
+            {view === "queue" ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {order.paymentStatus === "disputed" || order.stripeDisputeId ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busyId === order.id}
+                      onClick={() =>
+                        void run(
+                          order.id,
+                          `/api/admin/orders/${order.id}/dispute/resolve`,
+                          { action: "refund" },
+                        )
+                      }
+                      className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Dispute → refund buyer
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === order.id}
+                      onClick={() =>
+                        void run(
+                          order.id,
+                          `/api/admin/orders/${order.id}/dispute/resolve`,
+                          { action: "release" },
+                        )
+                      }
+                      className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                    >
+                      Dispute → release seller
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === order.id}
+                      onClick={() =>
+                        void run(
+                          order.id,
+                          `/api/admin/orders/${order.id}/dispute/resolve`,
+                          { action: "clear" },
+                        )
+                      }
+                      className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                    >
+                      Clear hold
+                    </button>
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busyId === order.id}
+                  onClick={() =>
+                    void run(
+                      order.id,
+                      `/api/admin/orders/${order.id}/force-release`,
+                      { overrideDispute: false },
+                    )
+                  }
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  Force release
+                </button>
+                <button
+                  type="button"
+                  disabled={busyId === order.id}
+                  onClick={() =>
+                    void run(order.id, `/api/admin/orders/${order.id}/force-refund`)
+                  }
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  Force refund
+                </button>
+                <button
+                  type="button"
+                  disabled={busyId === order.id}
+                  onClick={() =>
+                    void run(
+                      order.id,
+                      `/api/admin/orders/${order.id}/retry-transfer`,
+                    )
+                  }
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  Retry transfer
+                </button>
+                <button
+                  type="button"
+                  disabled={busyId === order.id}
+                  onClick={() =>
+                    void run(order.id, `/api/admin/orders/${order.id}/hold`, {
+                      hold: !order.adminHold,
+                    })
+                  }
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  {order.adminHold ? "Unfreeze" : "Freeze"}
+                </button>
+              </div>
+            ) : null}
           </div>
         ))
       )}

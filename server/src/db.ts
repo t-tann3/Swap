@@ -1,6 +1,7 @@
 import { MongoClient, type Db as MongoDb, type AnyBulkWriteOperation } from "mongodb";
 
 import { createSeedDatabase } from "./seed.js";
+import { log } from "./logger.js";
 import type { Database, Favorite, Listing, Order, Profile } from "./types.js";
 
 const DB_NAME = process.env.MONGODB_DB_NAME?.trim() || "swap";
@@ -54,6 +55,13 @@ function migrateDb(current: Database): Database {
     if (o.stripeDisputeId === undefined) o.stripeDisputeId = null;
     if (o.disputeStatus === undefined) o.disputeStatus = null;
     if (o.adminHold === undefined) o.adminHold = false;
+    if (o.platformDisputeReason === undefined) o.platformDisputeReason = null;
+    if (o.platformDisputeOpenedBy === undefined) {
+      o.platformDisputeOpenedBy = null;
+    }
+    if (o.platformDisputeOpenedAt === undefined) {
+      o.platformDisputeOpenedAt = null;
+    }
     if (o.cancelledReason === undefined) o.cancelledReason = null;
   }
   if (!Array.isArray(current.processedStripeEvents)) {
@@ -193,16 +201,18 @@ export async function initDb(): Promise<void> {
   const existing = await loadFromMongo(mongo);
   if (existing) {
     db = existing;
-    console.log(
-      `[db] MongoDB connected (${DB_NAME}): ` +
-        `${db.listings.length} listings, ${db.orders.length} orders`,
-    );
+    log.info("mongo_connected", {
+      dbName: DB_NAME,
+      listings: db.listings.length,
+      orders: db.orders.length,
+    });
   } else {
     db = migrateDb(createSeedDatabase());
     await persistToMongo(db);
-    console.log(
-      `[db] MongoDB connected (${DB_NAME}): seeded ${db.listings.length} demo listings`,
-    );
+    log.info("mongo_seeded", {
+      dbName: DB_NAME,
+      listings: db.listings.length,
+    });
   }
 }
 
@@ -230,13 +240,22 @@ export async function mutateDb(
     mutator(db);
     await persistToMongo(db);
     if (db.orders.length !== beforeOrders) {
-      console.log(
-        `[db] orders persisted: ${beforeOrders} → ${db.orders.length}`,
-      );
+      log.info("orders_persisted", {
+        before: beforeOrders,
+        after: db.orders.length,
+      });
     }
   });
   await writeChain;
   return db;
+}
+
+/** Lightweight connectivity probe for /health. */
+export async function getMongoPing(): Promise<void> {
+  if (!mongo) {
+    throw new Error("MongoDB is not connected.");
+  }
+  await mongo.command({ ping: 1 });
 }
 
 export async function resetDb(): Promise<Database> {

@@ -13,12 +13,14 @@ import { apiRequest } from "../api/client";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { Order } from "../marketplace/types";
 
-type Filter = "attention" | "stuck" | "disputed" | "frozen" | "overdue";
+type QueueFilter = "attention" | "stuck" | "disputed" | "frozen" | "overdue";
+type ViewMode = "queue" | "all";
 
 export function AdminScreen() {
   const { profile } = useMarketplace();
   const isAdmin = profile?.roles.includes("admin") ?? false;
-  const [filter, setFilter] = useState<Filter>("attention");
+  const [view, setView] = useState<ViewMode>("queue");
+  const [filter, setFilter] = useState<QueueFilter>("attention");
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -26,12 +28,20 @@ export function AdminScreen() {
 
   const load = useCallback(async () => {
     setError(null);
+    if (view === "all") {
+      const res = await apiRequest<{ data: Order[] }>(
+        `/api/admin/orders?status=all`,
+        { auth: true },
+      );
+      setOrders(res.data);
+      return;
+    }
     const res = await apiRequest<{ data: Order[] }>(
       `/api/admin/orders/escrow?filter=${filter}`,
       { auth: true },
     );
     setOrders(res.data);
-  }, [filter]);
+  }, [view, filter]);
 
   useFocusEffect(
     useCallback(() => {
@@ -85,7 +95,7 @@ export function AdminScreen() {
     );
   }
 
-  const filters: Filter[] = [
+  const filters: QueueFilter[] = [
     "attention",
     "disputed",
     "stuck",
@@ -97,26 +107,50 @@ export function AdminScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.heading}>Admin</Text>
       <Text style={styles.help}>
-        Resolve disputes and approve escrow actions. Separate from buyer/seller.
+        Ops console — no buying or selling. Resolve escrow and review all past
+        orders.
       </Text>
 
       <View style={styles.filters}>
-        {filters.map(f => (
-          <Pressable
-            key={f}
-            style={[styles.chip, filter === f && styles.chipOn]}
-            onPress={() => setFilter(f)}>
-            <Text style={[styles.chipText, filter === f && styles.chipTextOn]}>
-              {f}
-            </Text>
-          </Pressable>
-        ))}
+        <Pressable
+          style={[styles.chip, view === "queue" && styles.chipOn]}
+          onPress={() => setView("queue")}>
+          <Text
+            style={[styles.chipText, view === "queue" && styles.chipTextOn]}>
+            Escrow queue
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.chip, view === "all" && styles.chipOn]}
+          onPress={() => setView("all")}>
+          <Text style={[styles.chipText, view === "all" && styles.chipTextOn]}>
+            All orders
+          </Text>
+        </Pressable>
+        {view === "queue"
+          ? filters.map(f => (
+              <Pressable
+                key={f}
+                style={[styles.chip, filter === f && styles.chipOn]}
+                onPress={() => setFilter(f)}>
+                <Text
+                  style={[
+                    styles.chipText,
+                    filter === f && styles.chipTextOn,
+                  ]}>
+                  {f}
+                </Text>
+              </Pressable>
+            ))
+          : null}
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {orders.length === 0 ? (
-        <Text style={styles.meta}>No orders in this queue.</Text>
+        <Text style={styles.meta}>
+          {view === "all" ? "No orders yet." : "No orders in this queue."}
+        </Text>
       ) : (
         orders.map(order => (
           <View key={order.id} style={styles.card}>
@@ -127,69 +161,86 @@ export function AdminScreen() {
               {order.status} · {order.paymentStatus ?? "—"}
             </Text>
             <Text style={styles.meta}>
+              Buyer: {order.buyerUserId} · Seller: {order.sellerUserId}
+            </Text>
+            <Text style={styles.meta}>
+              {new Date(order.createdAt).toLocaleString()}
+            </Text>
+            <Text style={styles.meta}>
               Dispute: {order.disputeStatus ?? "—"} · Hold:{" "}
               {order.adminHold ? "yes" : "no"}
             </Text>
+            {order.platformDisputeOpenedAt ? (
+              <Text style={styles.meta}>
+                Platform dispute: {order.platformDisputeReason}
+              </Text>
+            ) : null}
             {order.transferLastError ? (
               <Text style={styles.error}>{order.transferLastError}</Text>
             ) : null}
 
-            <View style={styles.actions}>
-              {(order.paymentStatus === "disputed" || order.stripeDisputeId) && (
-                <>
-                  <Action
-                    label="Dispute → refund"
-                    disabled={busyId === order.id}
-                    onPress={() =>
-                      void run(
-                        order.id,
-                        `/api/admin/orders/${order.id}/dispute/resolve`,
-                        { action: "refund" },
-                      )
-                    }
-                  />
-                  <Action
-                    label="Dispute → release"
-                    disabled={busyId === order.id}
-                    onPress={() =>
-                      void run(
-                        order.id,
-                        `/api/admin/orders/${order.id}/dispute/resolve`,
-                        { action: "release" },
-                      )
-                    }
-                  />
-                </>
-              )}
-              <Action
-                label="Force refund"
-                disabled={busyId === order.id}
-                onPress={() =>
-                  void run(order.id, `/api/admin/orders/${order.id}/force-refund`)
-                }
-              />
-              <Action
-                label="Force release"
-                disabled={busyId === order.id}
-                onPress={() =>
-                  void run(
-                    order.id,
-                    `/api/admin/orders/${order.id}/force-release`,
-                    { overrideDispute: false },
-                  )
-                }
-              />
-              <Action
-                label="Retry transfer"
-                disabled={busyId === order.id}
-                onPress={() =>
-                  void run(
-                    order.id,
-                    `/api/admin/orders/${order.id}/retry-transfer`,
-                  )
-                }
-              />
-            </View>
+            {view === "queue" ? (
+              <View style={styles.actions}>
+                {(order.paymentStatus === "disputed" ||
+                  order.stripeDisputeId) && (
+                  <>
+                    <Action
+                      label="Dispute → refund"
+                      disabled={busyId === order.id}
+                      onPress={() =>
+                        void run(
+                          order.id,
+                          `/api/admin/orders/${order.id}/dispute/resolve`,
+                          { action: "refund" },
+                        )
+                      }
+                    />
+                    <Action
+                      label="Dispute → release"
+                      disabled={busyId === order.id}
+                      onPress={() =>
+                        void run(
+                          order.id,
+                          `/api/admin/orders/${order.id}/dispute/resolve`,
+                          { action: "release" },
+                        )
+                      }
+                    />
+                  </>
+                )}
+                <Action
+                  label="Force refund"
+                  disabled={busyId === order.id}
+                  onPress={() =>
+                    void run(
+                      order.id,
+                      `/api/admin/orders/${order.id}/force-refund`,
+                    )
+                  }
+                />
+                <Action
+                  label="Force release"
+                  disabled={busyId === order.id}
+                  onPress={() =>
+                    void run(
+                      order.id,
+                      `/api/admin/orders/${order.id}/force-release`,
+                      { overrideDispute: false },
+                    )
+                  }
+                />
+                <Action
+                  label="Retry transfer"
+                  disabled={busyId === order.id}
+                  onPress={() =>
+                    void run(
+                      order.id,
+                      `/api/admin/orders/${order.id}/retry-transfer`,
+                    )
+                  }
+                />
+              </View>
+            ) : null}
           </View>
         ))
       )}

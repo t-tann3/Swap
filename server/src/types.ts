@@ -136,6 +136,10 @@ export interface Order {
   disputeStatus: DisputeStatus | null;
   /** Ops freeze: skips auto no-show / seller-timeout / stuck-transfer sweeps. */
   adminHold: boolean;
+  /** Buyer/seller-opened platform dispute (item in locker / post-handoff issue). */
+  platformDisputeReason: string | null;
+  platformDisputeOpenedBy: string | null;
+  platformDisputeOpenedAt: string | null;
   /** Set when status becomes completed. */
   completedReason: CompletedReason | null;
   cancelledReason: CancelledReason | null;

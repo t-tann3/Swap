@@ -84,11 +84,10 @@ export function OrdersScreen({ navigation }: Props) {
     profile,
     acceptOrder,
     cancelOrder,
-    refundOrder,
+    disputeOrder,
     refresh,
     refreshing,
     showPrices,
-    paymentsEnabled,
   } = useMarketplace();
 
   const isBuyer = profile?.roles.includes("buyer") ?? false;
@@ -143,24 +142,26 @@ export function OrdersScreen({ navigation }: Props) {
     }
   }
 
-  function onRefund(order: Order) {
-    Alert.alert(
-      "Cancel & refund",
-      paymentsEnabled
-        ? "This voids or refunds the buyer’s escrow hold and cancels the order. The listing becomes available again."
-        : "Cancel this order after drop-off?",
+  function onDispute(order: Order) {
+    Alert.prompt(
+      "Open dispute",
+      "After drop-off the item may be in a locker. Describe the issue — ops will refund or release after review.",
       [
-        { text: "Keep order", style: "cancel" },
+        { text: "Cancel", style: "cancel" },
         {
-          text: "Refund",
-          style: "destructive",
-          onPress: () => {
+          text: "Submit",
+          onPress: reason => {
+            const text = (reason ?? "").trim();
+            if (text.length < 8) {
+              Alert.alert("Need more detail", "Use at least 8 characters.");
+              return;
+            }
             void (async () => {
               try {
-                await refundOrder(order.id);
+                await disputeOrder(order.id, text);
               } catch (err) {
                 Alert.alert(
-                  "Could not refund",
+                  "Could not open dispute",
                   err instanceof Error ? err.message : "Unknown error",
                 );
               }
@@ -168,6 +169,18 @@ export function OrdersScreen({ navigation }: Props) {
           },
         },
       ],
+      "plain-text",
+    );
+  }
+
+  function canDispute(order: Order): boolean {
+    if (order.platformDisputeOpenedAt || order.paymentStatus === "disputed") {
+      return false;
+    }
+    return (
+      order.status === "accepted" ||
+      order.status === "ready_for_pickup" ||
+      order.status === "completed"
     );
   }
 
@@ -299,6 +312,17 @@ export function OrdersScreen({ navigation }: Props) {
                 </View>
               ) : null}
 
+              {item.platformDisputeOpenedAt ||
+              item.paymentStatus === "disputed" ? (
+                <Text style={styles.disputeBanner}>
+                  Dispute open
+                  {item.platformDisputeReason
+                    ? `: ${item.platformDisputeReason}`
+                    : ""}
+                  . Escrow frozen until ops review.
+                </Text>
+              ) : null}
+
               <View style={styles.actions}>
                 {isSeller && item.status === "pending_accept" ? (
                   <Pressable
@@ -337,13 +361,11 @@ export function OrdersScreen({ navigation }: Props) {
                   </Pressable>
                 )}
 
-                {item.status === "ready_for_pickup" ? (
+                {canDispute(item) ? (
                   <Pressable
                     style={styles.secondary}
-                    onPress={() => onRefund(item)}>
-                    <Text style={styles.secondaryText}>
-                      {paymentsEnabled ? "Cancel & refund" : "Cancel order"}
-                    </Text>
+                    onPress={() => onDispute(item)}>
+                    <Text style={styles.secondaryText}>Open dispute</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -440,6 +462,16 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: "#5c6370",
     fontSize: 13,
+  },
+  disputeBanner: {
+    marginTop: 10,
+    backgroundColor: "#fff7ed",
+    color: "#9a3412",
+    fontSize: 13,
+    lineHeight: 18,
+    padding: 10,
+    borderRadius: 8,
+    overflow: "hidden",
   },
   linkBox: {
     marginTop: 10,

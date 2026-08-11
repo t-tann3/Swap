@@ -31,6 +31,7 @@ export function profileHasAdminRole(profile: Profile | undefined | null): boolea
 /**
  * Sync allowlist → profile.roles.
  * Admin cannot be self-selected; it is granted/revoked only via ADMIN_USER_IDS / ADMIN_EMAILS.
+ * Allowlisted admins are ops-only (no buyer/seller marketplace roles).
  */
 export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
   const wantAdmin = isAdminAllowlisted(user);
@@ -41,18 +42,19 @@ export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
     const idx = db.profiles.findIndex(p => p.userId === user.userId);
     if (idx >= 0) {
       const current = db.profiles[idx]!;
-      const roles = new Set<MarketplaceRole>(
-        current.roles.filter((r): r is MarketplaceRole =>
-          r === "buyer" || r === "seller" || r === "admin",
-        ),
-      );
-      if (wantAdmin) roles.add("admin");
-      else roles.delete("admin");
+      let roles: MarketplaceRole[];
+      if (wantAdmin) {
+        roles = ["admin"];
+      } else {
+        roles = current.roles.filter(
+          (r): r is MarketplaceRole => r === "buyer" || r === "seller",
+        );
+      }
       profile = {
         ...current,
         email: user.email,
         name: user.name,
-        roles: [...roles],
+        roles,
         updatedAt: ts,
       };
       db.profiles[idx] = profile;

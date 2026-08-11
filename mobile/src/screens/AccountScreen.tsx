@@ -25,12 +25,17 @@ export function AccountScreen() {
     favorites,
   } = useMarketplace();
   const roles = profile?.roles ?? [];
+  const isAdminOnly =
+    roles.includes("admin") &&
+    !roles.includes("buyer") &&
+    !roles.includes("seller");
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [payoutsReady, setPayoutsReady] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
+      if (isAdminOnly) return;
       void (async () => {
         try {
           const status = await apiRequest<{
@@ -43,7 +48,7 @@ export function AccountScreen() {
           // ignore
         }
       })();
-    }, []),
+    }, [isAdminOnly]),
   );
 
   async function toggle(role: "buyer" | "seller") {
@@ -81,23 +86,35 @@ export function AccountScreen() {
       <Text style={styles.value}>{me?.app.environment}</Text>
 
       <Text style={[styles.heading, styles.section]}>Roles</Text>
-      <Pressable
-        style={[styles.chip, roles.includes("buyer") && styles.chipOn]}
-        onPress={() => void toggle("buyer")}>
-        <Text style={styles.chipText}>Buyer</Text>
-      </Pressable>
-      <Pressable
-        style={[styles.chip, roles.includes("seller") && styles.chipOn]}
-        onPress={() => void toggle("seller")}>
-        <Text style={styles.chipText}>Seller</Text>
-      </Pressable>
-      {roles.includes("admin") ? (
+      {isAdminOnly ? (
         <View style={[styles.chip, styles.chipOn]}>
-          <Text style={styles.chipText}>Admin (operator)</Text>
+          <Text style={styles.chipText}>Admin</Text>
+          <Text style={styles.meta}>
+            Operator access only — no buying or selling. Use Admin to view all
+            orders and resolve escrow.
+          </Text>
         </View>
-      ) : null}
+      ) : (
+        <>
+          <Pressable
+            style={[styles.chip, roles.includes("buyer") && styles.chipOn]}
+            onPress={() => void toggle("buyer")}>
+            <Text style={styles.chipText}>Buyer</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.chip, roles.includes("seller") && styles.chipOn]}
+            onPress={() => void toggle("seller")}>
+            <Text style={styles.chipText}>Seller</Text>
+          </Pressable>
+          {roles.includes("admin") ? (
+            <View style={[styles.chip, styles.chipOn]}>
+              <Text style={styles.chipText}>Admin (operator)</Text>
+            </View>
+          ) : null}
+        </>
+      )}
 
-      {roles.includes("seller") && paymentsEnabled ? (
+      {!isAdminOnly && roles.includes("seller") && paymentsEnabled ? (
         <>
           <Text style={[styles.heading, styles.section]}>Seller payouts</Text>
           <Text style={styles.meta}>
@@ -119,11 +136,15 @@ export function AccountScreen() {
         </>
       ) : null}
 
-      <Text style={[styles.heading, styles.section]}>Activity</Text>
-      <Text style={styles.meta}>Purchases: {ordersAsBuyer.length}</Text>
-      <Text style={styles.meta}>Sales: {ordersAsSeller.length}</Text>
-      <Text style={styles.meta}>Listings: {myListings.length}</Text>
-      <Text style={styles.meta}>Favorites: {favorites.length}</Text>
+      {!isAdminOnly ? (
+        <>
+          <Text style={[styles.heading, styles.section]}>Activity</Text>
+          <Text style={styles.meta}>Purchases: {ordersAsBuyer.length}</Text>
+          <Text style={styles.meta}>Sales: {ordersAsSeller.length}</Text>
+          <Text style={styles.meta}>Listings: {myListings.length}</Text>
+          <Text style={styles.meta}>Favorites: {favorites.length}</Text>
+        </>
+      ) : null}
 
       <Pressable style={styles.button} onPress={() => void signOut()}>
         <Text style={styles.buttonText}>Sign out</Text>
@@ -178,6 +199,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#414651",
     marginBottom: 6,
+    marginTop: 6,
   },
   button: {
     marginTop: 32,

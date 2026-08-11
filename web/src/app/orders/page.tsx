@@ -72,9 +72,8 @@ export default function OrdersPage() {
     profile,
     acceptOrder,
     cancelOrder,
-    refundOrder,
+    disputeOrder,
     showPrices,
-    paymentsEnabled,
   } = useMarketplace();
   const isBuyer = profile?.roles.includes("buyer") ?? false;
   const isSellerRole = profile?.roles.includes("seller") ?? false;
@@ -85,6 +84,8 @@ export default function OrdersPage() {
   );
   const [statusBucket, setStatusBucket] = useState<StatusBucket>("placed");
   const [error, setError] = useState<string | null>(null);
+  const [disputeFor, setDisputeFor] = useState<string | null>(null);
+  const [disputeReason, setDisputeReason] = useState("");
 
   const roleTab: "buying" | "selling" = showRoleTabs
     ? tab
@@ -120,19 +121,30 @@ export default function OrdersPage() {
     }
   }
 
-  async function onRefund(order: Order) {
+  async function onDispute(order: Order) {
     setError(null);
-    const ok = window.confirm(
-      paymentsEnabled
-        ? "Cancel & refund? This voids or refunds the buyer’s escrow hold and cancels the order."
-        : "Cancel this order after drop-off?",
-    );
-    if (!ok) return;
-    try {
-      await refundOrder(order.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not refund");
+    if (disputeReason.trim().length < 8) {
+      setError("Describe the issue in at least 8 characters.");
+      return;
     }
+    try {
+      await disputeOrder(order.id, disputeReason.trim());
+      setDisputeFor(null);
+      setDisputeReason("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open dispute");
+    }
+  }
+
+  function canDispute(order: Order): boolean {
+    if (order.platformDisputeOpenedAt || order.paymentStatus === "disputed") {
+      return false;
+    }
+    return (
+      order.status === "accepted" ||
+      order.status === "ready_for_pickup" ||
+      order.status === "completed"
+    );
   }
 
   return (
@@ -243,6 +255,18 @@ export default function OrdersPage() {
                   />
                 </div>
               ) : null}
+              {item.platformDisputeOpenedAt ||
+              item.paymentStatus === "disputed" ? (
+                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  Dispute open
+                  {item.platformDisputeReason
+                    ? `: ${item.platformDisputeReason}`
+                    : item.disputeStatus
+                      ? ` (Stripe: ${item.disputeStatus})`
+                      : ""}
+                  . Escrow is frozen until ops review.
+                </p>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {isSeller && item.status === "pending_accept" ? (
                   <button
@@ -279,16 +303,50 @@ export default function OrdersPage() {
                     Cancel
                   </button>
                 )}
-                {item.status === "ready_for_pickup" ? (
+                {canDispute(item) ? (
                   <button
                     type="button"
-                    onClick={() => void onRefund(item)}
+                    onClick={() => {
+                      setDisputeFor(item.id);
+                      setDisputeReason("");
+                    }}
                     className="rounded-lg bg-zinc-100 px-3 py-2 text-sm font-semibold"
                   >
-                    {paymentsEnabled ? "Cancel & refund" : "Cancel order"}
+                    Open dispute
                   </button>
                 ) : null}
               </div>
+              {disputeFor === item.id ? (
+                <div className="mt-3 space-y-2 rounded-lg border border-zinc-200 p-3">
+                  <p className="text-sm text-zinc-600">
+                    After drop-off, the item may already be in a locker. Describe
+                    the issue — ops will refund or release after review.
+                  </p>
+                  <textarea
+                    value={disputeReason}
+                    onChange={e => setDisputeReason(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+                    placeholder="What went wrong?"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void onDispute(item)}
+                      className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white"
+                    >
+                      Submit dispute
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDisputeFor(null)}
+                      className="rounded-lg bg-zinc-100 px-3 py-2 text-sm font-semibold"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           );
         })}

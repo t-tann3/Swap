@@ -75,6 +75,9 @@ export interface Order {
   stripeDisputeId?: string | null;
   disputeStatus?: string | null;
   adminHold?: boolean;
+  platformDisputeReason?: string | null;
+  platformDisputeOpenedBy?: string | null;
+  platformDisputeOpenedAt?: string | null;
   completedReason?: CompletedReason | null;
   cancelledReason?: string | null;
   createdAt: string;

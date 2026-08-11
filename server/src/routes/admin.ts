@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { requireAdmin } from "../adminAuth.js";
-import { getDb, mutateDb, resetDb } from "../db.js";
+import { getDb, mutateDb, refreshDb, resetDb } from "../db.js";
 import {
   adminForceRefund,
   adminForceRelease,
@@ -28,7 +28,8 @@ function orderWithListing(orderId: string) {
 }
 
 /** List orders needing ops attention (stuck / disputed / frozen / overdue). */
-adminRouter.get("/orders/escrow", (req, res) => {
+adminRouter.get("/orders/escrow", async (req, res) => {
+  await refreshDb();
   const filter =
     typeof req.query.filter === "string" ? req.query.filter : "attention";
   const data = listEscrowAttentionOrders(filter).map(o => ({
@@ -36,6 +37,26 @@ adminRouter.get("/orders/escrow", (req, res) => {
     listing: getDb().listings.find(l => l.id === o.listingId) ?? null,
   }));
   res.json({ filter, count: data.length, data });
+});
+
+/**
+ * All marketplace orders for ops history (optional status filter).
+ * Use filter=all or omit status for every order.
+ */
+adminRouter.get("/orders", async (req, res) => {
+  await refreshDb();
+  const status =
+    typeof req.query.status === "string" ? req.query.status.trim() : "all";
+  let orders = [...getDb().orders];
+  if (status && status !== "all") {
+    orders = orders.filter(o => o.status === status);
+  }
+  orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const data = orders.map(o => ({
+    ...o,
+    listing: getDb().listings.find(l => l.id === o.listingId) ?? null,
+  }));
+  res.json({ status, count: data.length, data });
 });
 
 /** Inspect one order + live Stripe PI/transfer/refund/dispute snapshot. */
@@ -193,6 +214,9 @@ adminRouter.post("/orders/:id/dispute/resolve", async (req, res) => {
           restore && restore !== "disputed" ? restore : "captured";
       }
       o.paymentStatusBeforeDispute = null;
+      o.platformDisputeReason = null;
+      o.platformDisputeOpenedBy = null;
+      o.platformDisputeOpenedAt = null;
       o.adminHold = false;
       o.updatedAt = new Date().toISOString();
     });
