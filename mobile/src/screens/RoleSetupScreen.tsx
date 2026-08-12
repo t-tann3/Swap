@@ -50,7 +50,8 @@ export function RoleSetupScreen() {
       <Text style={styles.brand}>Swap</Text>
       <Text style={styles.title}>Choose your account type</Text>
       <Text style={styles.subtitle}>
-        Pick one. Each account type has its own tools and login experience.
+        Pick one. You can only use one account type at a time — Neighbor and
+        Pantry are separate.
       </Text>
 
       {options.map(opt => (

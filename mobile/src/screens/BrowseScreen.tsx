@@ -21,6 +21,7 @@ export function BrowseScreen({ navigation }: Props) {
   const {
     availableListings,
     profile,
+    categories,
     searchQuery,
     setSearchQuery,
     selectedCategory,
@@ -29,9 +30,16 @@ export function BrowseScreen({ navigation }: Props) {
     refreshing,
   } = useMarketplace();
 
-  const filterCategories = ["", ...LISTING_CATEGORIES];
+  const filterCategories = [
+    "",
+    ...(categories.length > 0 ? categories : [...LISTING_CATEGORIES]),
+  ];
 
-  if (!profile?.roles.includes("buyer")) {
+  const isNeighbor =
+    !!profile?.roles.includes("buyer") &&
+    !profile?.roles.includes("seller") &&
+    !profile?.roles.includes("admin");
+  if (!isNeighbor) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyTitle}>Neighbor role required</Text>
@@ -47,7 +55,8 @@ export function BrowseScreen({ navigation }: Props) {
       <View style={styles.searchWrap}>
         <TextInput
           style={styles.search}
-          placeholder="Search marketplace"
+          placeholder="Search Pantry"
+          placeholderTextColor="#4b5563"
           value={searchQuery}
           onChangeText={setSearchQuery}
           autoCapitalize="none"
@@ -122,6 +131,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
+    fontWeight: "500",
+    color: "#111827",
   },
   chips: {
     flexGrow: 0,

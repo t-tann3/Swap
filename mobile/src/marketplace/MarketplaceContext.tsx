@@ -90,35 +90,28 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
   const [defaultPatronCap, setDefaultPatronCap] = useState(5);
   const [activeMode, setActiveModeState] = useState<"buyer" | "seller">("buyer");
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const stored = await AsyncStorage.getItem(ACTIVE_MODE_KEY);
-        if (
-          !cancelled &&
-          (stored === "buyer" || stored === "seller")
-        ) {
-          setActiveModeState(stored);
-        }
-      } catch {
-        // keep default
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Keep activeMode valid for the roles the user actually has.
+  // Exclusive account type only — never toggle Neighbor ↔ Pantry in-session.
   useEffect(() => {
     const roles = profile?.roles ?? [];
-    if (roles.includes(activeMode)) return;
-    if (roles.includes("buyer")) setActiveModeState("buyer");
-    else if (roles.includes("seller")) setActiveModeState("seller");
-  }, [profile?.roles, activeMode]);
+    const buyerOnly =
+      roles.includes("buyer") &&
+      !roles.includes("seller") &&
+      !roles.includes("admin");
+    const sellerOnly =
+      roles.includes("seller") &&
+      !roles.includes("buyer") &&
+      !roles.includes("admin");
+    if (buyerOnly) {
+      setActiveModeState("buyer");
+      void AsyncStorage.setItem(ACTIVE_MODE_KEY, "buyer");
+    } else if (sellerOnly) {
+      setActiveModeState("seller");
+      void AsyncStorage.setItem(ACTIVE_MODE_KEY, "seller");
+    }
+  }, [profile?.roles]);
 
   const setActiveMode = useCallback(async (mode: "buyer" | "seller") => {
+    // Only used when choosing account type at onboarding — not a runtime switcher.
     setActiveModeState(mode);
     try {
       await AsyncStorage.setItem(ACTIVE_MODE_KEY, mode);
@@ -136,16 +129,7 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       if (searchQuery.trim()) params.set("q", searchQuery.trim());
       if (selectedCategory) params.set("category", selectedCategory);
 
-      const [
-        profileRes,
-        listingsRes,
-        mineRes,
-        catsRes,
-        favRes,
-        buyOrders,
-        sellOrders,
-        payCfg,
-      ] = await Promise.all([
+      const settled = await Promise.allSettled([
         apiRequest<UserProfile>("/api/me/profile", { auth: true }),
         apiRequest<{ data: Listing[] }>(`/api/listings?${params.toString()}`, {
           auth: true,
@@ -165,27 +149,58 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
         }>("/api/payments/config"),
       ]);
 
-      setProfile({
-        userId: profileRes.userId,
-        email: profileRes.email,
-        name: profileRes.name,
-        roles: profileRes.roles ?? [],
-        bio: profileRes.bio ?? "",
-        patronCap: profileRes.patronCap ?? null,
-        isPantrySeller: profileRes.isPantrySeller ?? false,
-        adminOptOut: profileRes.adminOptOut ?? false,
-        adminEligible: profileRes.adminEligible ?? false,
-      });
-      setListings(listingsRes.data);
-      setMyListingsState(mineRes.data.filter(l => l.status !== "cancelled"));
-      setCategories(catsRes.data);
-      setFavorites(favRes.data);
-      setOrdersAsBuyer(buyOrders.data);
-      setOrdersAsSeller(sellOrders.data);
-      setPaymentsEnabled(payCfg.enabled);
-      setShowPrices(payCfg.showPrices ?? payCfg.enabled);
-      setPantryMode(Boolean(payCfg.pantryMode));
-      setDefaultPatronCap(payCfg.defaultPatronCap ?? 5);
+      const [
+        profileRes,
+        listingsRes,
+        mineRes,
+        catsRes,
+        favRes,
+        buyOrders,
+        sellOrders,
+        payCfg,
+      ] = settled;
+
+      if (profileRes.status === "fulfilled") {
+        const p = profileRes.value;
+        setProfile({
+          userId: p.userId,
+          email: p.email,
+          name: p.name,
+          roles: p.roles ?? [],
+          bio: p.bio ?? "",
+          patronCap: p.patronCap ?? null,
+          isPantrySeller: p.isPantrySeller ?? false,
+          adminOptOut: p.adminOptOut ?? false,
+          adminEligible: p.adminEligible ?? false,
+        });
+      }
+      if (listingsRes.status === "fulfilled") {
+        setListings(listingsRes.value.data);
+      }
+      if (mineRes.status === "fulfilled") {
+        setMyListingsState(
+          mineRes.value.data.filter(l => l.status !== "cancelled"),
+        );
+      }
+      if (catsRes.status === "fulfilled") {
+        setCategories(catsRes.value.data);
+      }
+      if (favRes.status === "fulfilled") {
+        setFavorites(favRes.value.data);
+      }
+      if (buyOrders.status === "fulfilled") {
+        setOrdersAsBuyer(buyOrders.value.data);
+      }
+      if (sellOrders.status === "fulfilled") {
+        setOrdersAsSeller(sellOrders.value.data);
+      }
+      if (payCfg.status === "fulfilled") {
+        const cfg = payCfg.value;
+        setPaymentsEnabled(cfg.enabled);
+        setShowPrices(cfg.showPrices ?? cfg.enabled);
+        setPantryMode(Boolean(cfg.pantryMode));
+        setDefaultPatronCap(cfg.defaultPatronCap ?? 5);
+      }
     } finally {
       setRefreshing(false);
       setReady(true);

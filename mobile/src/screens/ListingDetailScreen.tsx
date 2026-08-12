@@ -33,7 +33,6 @@ export function ListingDetailScreen({ route, navigation }: Props) {
     deleteListing,
     showPrices,
     pantryMode,
-    activeMode,
   } = useMarketplace();
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,15 +80,20 @@ export function ListingDetailScreen({ route, navigation }: Props) {
     );
   }
 
+  const roles = profile?.roles ?? [];
+  const isPantry =
+    roles.includes("seller") &&
+    !roles.includes("buyer") &&
+    !roles.includes("admin");
+  const isNeighbor =
+    roles.includes("buyer") &&
+    !roles.includes("seller") &&
+    !roles.includes("admin");
   const ownsListing = profile?.userId === listing.sellerUserId;
-  const showSellerTools =
-    ownsListing &&
-    activeMode === "seller" &&
-    !!profile?.roles.includes("seller");
+  const showSellerTools = ownsListing && isPantry;
   const canBuy =
-    !!profile?.roles.includes("buyer") &&
+    isNeighbor &&
     listing.status === "available" &&
-    activeMode === "buyer" &&
     (!ownsListing || pantryMode);
   const liked = isFavorite(listing.id);
 

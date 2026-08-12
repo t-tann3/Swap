@@ -104,13 +104,12 @@ export function OrdersScreen({ navigation }: Props) {
     showPrices,
   } = useMarketplace();
 
-  const isBuyer = profile?.roles.includes("buyer") ?? false;
-  const isSellerRole = profile?.roles.includes("seller") ?? false;
-  const showRoleTabs = isBuyer && isSellerRole;
+  const roles = profile?.roles ?? [];
+  const isSellerRole =
+    roles.includes("seller") &&
+    !roles.includes("buyer") &&
+    !roles.includes("admin");
 
-  const [tab, setTab] = useState<"buying" | "selling">(() =>
-    isSellerRole && !isBuyer ? "selling" : "buying",
-  );
   const [statusBucket, setStatusBucket] = useState<StatusBucket>("placed");
 
   const refreshOnFocus = useCallback(() => {
@@ -119,11 +118,8 @@ export function OrdersScreen({ navigation }: Props) {
 
   useFocusEffect(refreshOnFocus);
 
-  const roleTab: "buying" | "selling" = showRoleTabs
-    ? tab
-    : isSellerRole && !isBuyer
-      ? "selling"
-      : "buying";
+  // Exclusive account type — no Neighbor/Pantry order toggle.
+  const roleTab: "buying" | "selling" = isSellerRole ? "selling" : "buying";
 
   const activeBucket =
     STATUS_BUCKETS.find(b => b.id === statusBucket) ?? STATUS_BUCKETS[0]!;
@@ -135,37 +131,6 @@ export function OrdersScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      {showRoleTabs ? (
-        <View style={styles.tabs}>
-          <Pressable
-            style={[styles.tab, roleTab === "buying" && styles.tabOn]}
-            onPress={() => {
-              setTab("buying");
-            }}>
-            <Text
-              style={[
-                styles.tabText,
-                roleTab === "buying" && styles.tabTextOn,
-              ]}>
-              Neighbors
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.tab, roleTab === "selling" && styles.tabOn]}
-            onPress={() => {
-              setTab("selling");
-            }}>
-            <Text
-              style={[
-                styles.tabText,
-                roleTab === "selling" && styles.tabTextOn,
-              ]}>
-              Pantry
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
-
       <View style={styles.subTabs}>
         {STATUS_BUCKETS.map(bucket => {
           const on = statusBucket === bucket.id;
@@ -268,30 +233,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f4f5f7",
-  },
-  tabs: {
-    flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
-  tab: {
-    flex: 1,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  tabOn: {
-    backgroundColor: "#111827",
-  },
-  tabText: {
-    fontWeight: "600",
-    color: "#111827",
-  },
-  tabTextOn: {
-    color: "#fff",
   },
   subTabs: {
     flexDirection: "row",

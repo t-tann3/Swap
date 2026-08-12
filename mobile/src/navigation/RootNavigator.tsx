@@ -318,7 +318,7 @@ function SignedInFlow() {
     );
   }
 
-  // Exactly one marketplace persona — dual-role accounts re-pick.
+  // Exactly one account type — dual/stacked roles must re-pick.
   if (!profile || !marketplacePersona(profile.roles)) {
     return <RoleSetupScreen />;
   }

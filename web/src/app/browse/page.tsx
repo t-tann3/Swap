@@ -41,8 +41,8 @@ export default function BrowsePage() {
       </div>
 
       <input
-        className="mb-4 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3"
-        placeholder="Search marketplace"
+        className="mb-4 w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-zinc-900 placeholder:text-zinc-600"
+        placeholder="Search Pantry"
         value={searchQuery}
         onChange={e => setSearchQuery(e.target.value)}
       />

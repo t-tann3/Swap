@@ -57,7 +57,11 @@ export function SellScreen({ navigation, route }: Props) {
     navigation.setParams({ draft: undefined });
   }, [route.params?.draft, navigation]);
 
-  if (!profile?.roles.includes("seller")) {
+  const isPantry =
+    !!profile?.roles.includes("seller") &&
+    !profile?.roles.includes("buyer") &&
+    !profile?.roles.includes("admin");
+  if (!isPantry) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyTitle}>Pantry role required</Text>

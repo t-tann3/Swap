@@ -58,7 +58,18 @@ export async function apiRequest<T>(
     });
 
     const text = await response.text();
-    const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    let body: Record<string, unknown> = {};
+    if (text) {
+      try {
+        body = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        throw new ApiError(
+          response.status,
+          "invalid_json",
+          `API returned non-JSON (${response.status}) for ${path}. Check API_BASE_URL (${API_BASE_URL}).`,
+        );
+      }
+    }
 
     if (
       auth &&
