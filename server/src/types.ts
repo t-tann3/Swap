@@ -104,6 +104,8 @@ export interface Listing {
   sellerUserId: string;
   sellerEmail: string | null;
   sellerName: string | null;
+  /** Staff who created the listing (pantry member or owner). */
+  createdByUserId: string | null;
   title: string;
   description: string;
   priceCents: number;
@@ -161,12 +163,85 @@ export interface StockAdjustment {
   id: string;
   listingId: string;
   sellerUserId: string;
+  /** Staff member who applied the change (may differ from sellerUserId). */
+  actorUserId: string | null;
   delta: number;
   /** Optional note; may be empty. */
   reason: string;
   previousQty: number;
   nextQty: number;
   createdAt: string;
+}
+
+/** Pantry staff role within a pantry org (not marketplace buyer/seller). */
+export type PantryStaffRole = "owner" | "member";
+
+/**
+ * A pantry organization. Listings and orders stay keyed to `ownerUserId`
+ * (the canonical seller id). Members act on behalf of that owner — no Stripe.
+ */
+export interface Pantry {
+  id: string;
+  ownerUserId: string;
+  name: string;
+  /**
+   * When true, only neighbors on this pantry's patron roster (email match)
+   * may browse/basket/checkout this pantry's listings.
+   */
+  patronAllowlistEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Neighbor allowlist row for a pantry (verified members / patrons). */
+export type PantryPatronStatus = "listed" | "matched" | "removed";
+
+export interface PantryPatron {
+  id: string;
+  pantryId: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  /** Set when a Neighbor signs in with a matching email. */
+  userId: string | null;
+  status: PantryPatronStatus;
+  uploadedByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+  matchedAt: string | null;
+}
+
+export interface PantryMembership {
+  id: string;
+  pantryId: string;
+  userId: string;
+  role: PantryStaffRole;
+  email: string | null;
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PantryInviteStatus = "pending" | "accepted" | "revoked";
+
+/** Email invite that becomes a membership when the invitee signs in. */
+export interface PantryInvite {
+  id: string;
+  pantryId: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  invitedByUserId: string;
+  status: PantryInviteStatus;
+  createdAt: string;
+  updatedAt: string;
+  acceptedAt: string | null;
+  acceptedUserId: string | null;
 }
 
 export interface OrderItem {
@@ -234,6 +309,12 @@ export interface Order {
   platformDisputeReason: string | null;
   platformDisputeOpenedBy: string | null;
   platformDisputeOpenedAt: string | null;
+  /** Pantry staff who accepted the order. */
+  acceptedByUserId: string | null;
+  acceptedByName: string | null;
+  /** Pantry staff who completed Relai drop-off. */
+  droppedOffByUserId: string | null;
+  droppedOffByName: string | null;
   /** Set when status becomes completed. */
   completedReason: CompletedReason | null;
   cancelledReason: CancelledReason | null;
@@ -256,6 +337,10 @@ export interface Database {
   baskets: Basket[];
   pantrySettings: PantrySettings;
   stockAdjustments: StockAdjustment[];
+  pantries: Pantry[];
+  pantryMemberships: PantryMembership[];
+  pantryInvites: PantryInvite[];
+  pantryPatrons: PantryPatron[];
   /** Recent Stripe webhook event ids (idempotency). */
   processedStripeEvents: string[];
   /** Recent Relai webhook event ids (idempotency). */

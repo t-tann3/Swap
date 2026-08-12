@@ -43,6 +43,7 @@ export interface Listing {
   sellerUserId: string;
   sellerEmail: string | null;
   sellerName: string | null;
+  createdByUserId?: string | null;
   title: string;
   description: string;
   priceCents: number;
@@ -97,6 +98,10 @@ export interface Order {
   platformDisputeReason?: string | null;
   platformDisputeOpenedBy?: string | null;
   platformDisputeOpenedAt?: string | null;
+  acceptedByUserId?: string | null;
+  acceptedByName?: string | null;
+  droppedOffByUserId?: string | null;
+  droppedOffByName?: string | null;
   completedReason?: CompletedReason | null;
   cancelledReason?: string | null;
   createdAt: string;
@@ -105,6 +110,65 @@ export interface Order {
   listing?: Listing | null;
   /** Enriched from buyer profile for seller/ops views. */
   buyerEmail?: string | null;
+}
+
+export type PantryStaffRole = "owner" | "member";
+
+export type PantryTeamStatus = "invited" | "accepted";
+
+export interface PantryTeamMember {
+  userId: string;
+  role: PantryStaffRole;
+  email: string | null;
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  status: "accepted";
+  createdAt: string;
+}
+
+export interface PantryTeamInvite {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  invitedByUserId: string;
+  status: "invited";
+  createdAt: string;
+}
+
+export interface PantryTeam {
+  pantry: { id: string; ownerUserId: string; name: string } | null;
+  role: PantryStaffRole | null;
+  members: PantryTeamMember[];
+  invites: PantryTeamInvite[];
+}
+
+export type PantryPatronStatus = "listed" | "matched";
+
+export interface PantryPatronRow {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  userId: string | null;
+  status: PantryPatronStatus;
+  createdAt: string;
+  matchedAt: string | null;
+}
+
+export interface PantryPatronRoster {
+  pantry: {
+    id: string;
+    ownerUserId: string;
+    name: string;
+    patronAllowlistEnabled: boolean;
+  } | null;
+  role: PantryStaffRole | null;
+  patrons: PantryPatronRow[];
 }
 
 export interface CreateListingInput {

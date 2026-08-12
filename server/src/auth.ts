@@ -16,26 +16,16 @@ declare global {
 
 const RELAI_API = "https://access.relai.us/api/v1";
 
-export async function requireAuth(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
-  const header = req.header("authorization");
-  if (!header?.toLowerCase().startsWith("bearer ")) {
-    res.status(401).json({ code: "unauthorized", message: "Missing bearer token." });
-    return;
-  }
-
-  const token = header.slice("bearer ".length).trim();
+async function resolveRelaiUser(
+  token: string,
+): Promise<{ user: AuthUser } | { errorStatus: number; message: string }> {
   const publishableKey = process.env.RELAI_PUBLISHABLE_KEY;
 
   if (!publishableKey?.startsWith("pk_")) {
-    res.status(500).json({
-      code: "server_misconfigured",
+    return {
+      errorStatus: 500,
       message: "Server missing RELAI_PUBLISHABLE_KEY.",
-    });
-    return;
+    };
   }
 
   try {
@@ -49,19 +39,21 @@ export async function requireAuth(
     if (!response.ok) {
       let detail = "";
       try {
-        const errBody = (await response.json()) as { code?: string; message?: string };
+        const errBody = (await response.json()) as {
+          code?: string;
+          message?: string;
+        };
         detail = errBody.code ? ` (${errBody.code})` : "";
       } catch {
         // ignore
       }
-      res.status(401).json({
-        code: "unauthorized",
+      return {
+        errorStatus: 401,
         message:
           response.status === 401
             ? `Relai session is invalid or expired${detail}. Sign out and sign in again.`
             : `Relai verification failed (${response.status})${detail}.`,
-      });
-      return;
+      };
     }
 
     const me = (await response.json()) as {
@@ -70,16 +62,65 @@ export async function requireAuth(
       name: string | null;
     };
 
-    req.user = {
-      userId: me.user_id,
-      email: me.email,
-      name: me.name,
+    return {
+      user: {
+        userId: me.user_id,
+        email: me.email,
+        name: me.name,
+      },
     };
-    next();
   } catch {
-    res.status(503).json({
-      code: "relai_unreachable",
+    return {
+      errorStatus: 503,
       message: "Could not verify session with Relai.",
-    });
+    };
   }
+}
+
+export async function requireAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const header = req.header("authorization");
+  if (!header?.toLowerCase().startsWith("bearer ")) {
+    res.status(401).json({ code: "unauthorized", message: "Missing bearer token." });
+    return;
+  }
+
+  const token = header.slice("bearer ".length).trim();
+  const result = await resolveRelaiUser(token);
+  if ("errorStatus" in result) {
+    res.status(result.errorStatus).json({
+      code:
+        result.errorStatus === 503
+          ? "relai_unreachable"
+          : result.errorStatus === 500
+            ? "server_misconfigured"
+            : "unauthorized",
+      message: result.message,
+    });
+    return;
+  }
+  req.user = result.user;
+  next();
+}
+
+/** Attach user when a bearer token is present; otherwise continue anonymously. */
+export async function optionalAuth(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const header = req.header("authorization");
+  if (!header?.toLowerCase().startsWith("bearer ")) {
+    next();
+    return;
+  }
+  const token = header.slice("bearer ".length).trim();
+  const result = await resolveRelaiUser(token);
+  if ("user" in result) {
+    req.user = result.user;
+  }
+  next();
 }

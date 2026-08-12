@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  exclusivePersonaRoles,
   isAdminAllowlisted,
   parseAdminAllowlist,
   profileHasAdminRole,
@@ -110,6 +111,14 @@ describe("admin gates", () => {
   it("detects admin role on profile", () => {
     expect(profileHasAdminRole({ roles: ["admin"] } as never)).toBe(true);
     expect(profileHasAdminRole({ roles: ["buyer"] } as never)).toBe(false);
+  });
+
+  it("keeps personas exclusive and never stacks admin", () => {
+    expect(exclusivePersonaRoles(["buyer"], true)).toEqual(["buyer"]);
+    expect(exclusivePersonaRoles(["seller"], true)).toEqual(["seller"]);
+    expect(exclusivePersonaRoles(["admin"], true)).toEqual(["admin"]);
+    expect(exclusivePersonaRoles(["buyer", "admin"], true)).toEqual([]);
+    expect(exclusivePersonaRoles(["admin"], false)).toEqual([]);
   });
 
   it("allows x-admin-key without Relai session", async () => {

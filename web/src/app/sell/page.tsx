@@ -1,48 +1,67 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type RefObject,
+} from "react";
 import Link from "next/link";
 
-import { ListingCard } from "../../components/ListingCard";
 import { useMarketplace } from "../../context/MarketplaceContext";
 import { apiRequest } from "../../lib/api";
 import {
+  DEFAULT_PANTRY_CATEGORY,
   LISTING_CATEGORIES,
   type ListingCategory,
 } from "../../lib/categories";
 import { fileToBase64, mediaUrl } from "../../lib/media";
 
 export default function SellPage() {
-  const { profile, myListings, createListing, showPrices, pantryMode } =
-    useMarketplace();
+  const { profile, createListing, showPrices, pantryMode } = useMarketplace();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
   const [stockQty, setStockQty] = useState("1");
   const [maxPerOrder, setMaxPerOrder] = useState("1");
-  const [category, setCategory] = useState<ListingCategory>("General");
+  const [category, setCategory] = useState<ListingCategory>(
+    DEFAULT_PANTRY_CATEGORY,
+  );
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<"ok" | "err">("ok");
   const [barcode, setBarcode] = useState("");
   const [lookupBusy, setLookupBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   if (!profile?.roles.includes("seller")) {
     return (
-      <div className="rounded-xl bg-white p-6">
-        <h1 className="text-lg font-semibold">Pantry role required</h1>
+      <div className="mx-auto max-w-lg rounded-2xl bg-white p-8">
+        <h1 className="text-xl font-semibold">Pantry access required</h1>
         <p className="mt-2 text-zinc-600">
-          Enable Pantry in Account to post items.
+          Switch to the Pantry experience in Account to stock food.
         </p>
+        <Link
+          href="/account"
+          className="mt-4 inline-block font-semibold text-zinc-900 underline"
+        >
+          Go to Account
+        </Link>
       </div>
     );
+  }
+
+  function flash(text: string, tone: "ok" | "err" = "ok") {
+    setMessage(text);
+    setMessageTone(tone);
   }
 
   async function onFileChange(file: File | null) {
     if (!file) return;
     setPhotoBusy(true);
-    setMessage(null);
     try {
       const { imageBase64, mimeType } = await fileToBase64(file);
       const res = await apiRequest<{ url: string }>("/api/uploads", {
@@ -51,21 +70,22 @@ export default function SellPage() {
         body: JSON.stringify({ imageBase64, mimeType }),
       });
       setImageUrl(res.url);
+      flash("Photo added — review details and add to shelf.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Photo upload failed");
+      flash(err instanceof Error ? err.message : "Photo upload failed", "err");
     } finally {
       setPhotoBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
   async function onBarcodeLookup() {
     const code = barcode.replace(/\D/g, "");
     if (code.length < 8) {
-      setMessage("Enter an 8–14 digit barcode (UPC/EAN).");
+      flash("Enter an 8–14 digit barcode.", "err");
       return;
     }
     setLookupBusy(true);
-    setMessage(null);
     try {
       const product = await apiRequest<{
         title: string;
@@ -76,15 +96,18 @@ export default function SellPage() {
       }>(`/api/products/barcode/${encodeURIComponent(code)}`, { auth: true });
       setTitle(product.title);
       setDescription(product.description);
-      setCategory(product.category);
+      setCategory(product.category || DEFAULT_PANTRY_CATEGORY);
       if (product.imageUrl) setImageUrl(product.imageUrl);
-      setMessage(
+      flash(
         product.imageUrl
-          ? `Barcode ${product.barcode} — catalog photo loaded. Set stock and post.`
-          : `Barcode ${product.barcode} filled title/details. Set stock and post.`,
+          ? "Filled from barcode. Replace the photo anytime, then set stock."
+          : "Filled from barcode. Add a photo if you have one, then set stock.",
       );
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Barcode lookup failed");
+      flash(
+        err instanceof Error ? err.message : "Barcode lookup failed",
+        "err",
+      );
     } finally {
       setLookupBusy(false);
     }
@@ -105,17 +128,17 @@ export default function SellPage() {
           !Number.isFinite(itemCap) ||
           itemCap < 1))
     ) {
-      setMessage(
-        showPrices
-          ? "Add a title, description, and valid price."
-          : pantryMode
-            ? "Add a title, description, stock, and per-patron item cap."
+      flash(
+        pantryMode
+          ? "Add a title, description, and stock amounts."
+          : showPrices
+            ? "Add a title, description, and valid price."
             : "Add a title and description.",
+        "err",
       );
       return;
     }
     setBusy(true);
-    setMessage(null);
     try {
       await createListing({
         title,
@@ -133,104 +156,45 @@ export default function SellPage() {
       setPrice("");
       setStockQty("1");
       setMaxPerOrder("1");
-      setCategory("General");
+      setCategory(DEFAULT_PANTRY_CATEGORY);
       setImageUrl(null);
       setBarcode("");
-      setMessage(pantryMode ? "Food listed for pantry." : "Listing posted.");
+      flash(pantryMode ? "Added to the shelf." : "Listing posted.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not post");
+      flash(err instanceof Error ? err.message : "Could not post", "err");
     } finally {
       setBusy(false);
     }
   }
 
   const preview = mediaUrl(imageUrl);
+  const canPost =
+    title.trim().length > 0 &&
+    description.trim().length > 0 &&
+    !busy &&
+    !photoBusy;
 
-  return (
-    <div className="grid gap-8 lg:grid-cols-2">
-      <form onSubmit={onSubmit} className="rounded-2xl bg-white p-5 shadow-sm">
-        <h1 className="text-2xl font-bold">
-          {pantryMode ? "Stock pantry food" : "Post an item"}
-        </h1>
-        <p className="mt-2 text-sm text-zinc-600">
-          {pantryMode
-            ? "Look up a barcode to fill the listing and catalog photo, then set stock and post."
-            : "Items must fit a Relai Exchange Zone compartment. All doors are the same size. A listing photo is optional."}
-        </p>
-        {pantryMode ? (
-          <p className="mt-2 text-sm">
-            <Link href="/inventory" className="font-semibold text-zinc-900 underline">
-              Open inventory
-            </Link>{" "}
-            to see available vs reserved and adjust stock.
-          </p>
-        ) : null}
-        {pantryMode ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="Barcode (UPC/EAN)"
-              value={barcode}
-              onChange={e => setBarcode(e.target.value)}
-              className="min-w-[12rem] flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-            />
-            <button
-              type="button"
-              disabled={lookupBusy || busy}
-              onClick={() => void onBarcodeLookup()}
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              {lookupBusy ? "Looking up…" : "Look up"}
-            </button>
+  if (!pantryMode) {
+    return (
+      <div className="mx-auto max-w-xl">
+        <form
+          onSubmit={onSubmit}
+          className="space-y-5 rounded-2xl bg-white p-6 shadow-sm"
+        >
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Post an item</h1>
+            <p className="mt-1 text-sm text-zinc-600">
+              Must fit a Relai Exchange Zone compartment. Photo optional.
+            </p>
           </div>
-        ) : null}
-        <div className="mt-4 space-y-3">
-          {pantryMode ? (
-            preview ? (
-              <div>
-                <p className="mb-2 text-sm font-semibold">Catalog photo</p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={preview}
-                  alt="Catalog preview"
-                  className="mb-2 h-44 w-full rounded-xl object-cover"
-                />
-              </div>
-            ) : null
-          ) : (
-            <div>
-              <p className="mb-2 text-sm font-semibold">Photo (optional)</p>
-              {preview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={preview}
-                  alt="Listing preview"
-                  className="mb-2 h-44 w-full rounded-xl object-cover"
-                />
-              ) : (
-                <div className="mb-2 flex h-28 items-center justify-center rounded-xl bg-zinc-100 text-sm text-zinc-500">
-                  No photo yet
-                </div>
-              )}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                disabled={busy || photoBusy}
-                onChange={e => void onFileChange(e.target.files?.[0] ?? null)}
-                className="block w-full text-sm text-zinc-600"
-              />
-              {imageUrl ? (
-                <button
-                  type="button"
-                  className="mt-2 block text-sm font-semibold text-zinc-600 underline"
-                  onClick={() => setImageUrl(null)}
-                >
-                  Remove photo
-                </button>
-              ) : null}
-            </div>
-          )}
+          <PhotoField
+            preview={preview}
+            photoBusy={photoBusy}
+            disabled={busy}
+            fileRef={fileRef}
+            onPick={file => void onFileChange(file)}
+            onRemove={() => setImageUrl(null)}
+          />
           <input
             className="w-full rounded-xl border border-zinc-200 px-4 py-3"
             placeholder="Title"
@@ -238,7 +202,7 @@ export default function SellPage() {
             onChange={e => setTitle(e.target.value)}
           />
           <textarea
-            className="min-h-28 w-full rounded-xl border border-zinc-200 px-4 py-3"
+            className="min-h-24 w-full rounded-xl border border-zinc-200 px-4 py-3"
             placeholder="Description"
             value={description}
             onChange={e => setDescription(e.target.value)}
@@ -251,84 +215,348 @@ export default function SellPage() {
               onChange={e => setPrice(e.target.value)}
             />
           ) : null}
-          {pantryMode ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block text-sm font-semibold">
-                Stock on shelf
+          <CategoryList category={category} onChange={setCategory} />
+          {message ? (
+            <p
+              className={`text-sm ${messageTone === "err" ? "text-red-700" : "text-emerald-800"}`}
+            >
+              {message}
+            </p>
+          ) : null}
+          <button
+            type="submit"
+            disabled={!canPost}
+            className="w-full rounded-xl bg-zinc-900 py-3.5 font-semibold text-white disabled:opacity-40"
+          >
+            {busy ? "Posting…" : "Post listing"}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl pb-10 pt-2">
+      <header className="mb-10">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">
+          Pantry
+        </p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight">
+          Add to shelf
+        </h1>
+        <p className="mt-2 max-w-xl text-sm leading-relaxed text-zinc-600">
+          Scan a barcode to autofill, or enter details yourself. Neighbors
+          will see this on Browse.
+        </p>
+      </header>
+
+      <form onSubmit={onSubmit} className="space-y-8">
+          {/* 1 — Scan */}
+          <section className="rounded-2xl bg-white px-6 py-7 shadow-sm ring-1 ring-zinc-100">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-zinc-500">
+                1 · Scan
+              </h2>
+              <span className="text-xs text-zinc-400">Optional</span>
+            </div>
+            <div className="mt-5 flex gap-3">
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="Barcode number"
+                value={barcode}
+                onChange={e => setBarcode(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void onBarcodeLookup();
+                  }
+                }}
+                className="min-w-0 flex-1 rounded-xl border border-zinc-200 px-4 py-3.5 text-base"
+              />
+              <button
+                type="button"
+                disabled={lookupBusy || busy}
+                onClick={() => void onBarcodeLookup()}
+                className="shrink-0 rounded-xl bg-zinc-900 px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {lookupBusy ? "…" : "Look up"}
+              </button>
+            </div>
+          </section>
+
+          {/* 2 — Item */}
+          <section className="rounded-2xl bg-white px-6 py-7 shadow-sm ring-1 ring-zinc-100">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-zinc-500">
+              2 · Item
+            </h2>
+            <div className="mt-5 grid gap-5 sm:grid-cols-[148px_minmax(0,1fr)]">
+              <PhotoField
+                preview={preview}
+                photoBusy={photoBusy}
+                disabled={busy}
+                fileRef={fileRef}
+                onPick={file => void onFileChange(file)}
+                onRemove={() => setImageUrl(null)}
+                compact
+              />
+              <div className="space-y-4">
+                <input
+                  className="w-full rounded-xl border border-zinc-200 px-4 py-3.5 text-base"
+                  placeholder="What is it?"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                />
+                <textarea
+                  className="min-h-[6.5rem] w-full rounded-xl border border-zinc-200 px-4 py-3.5 text-base"
+                  placeholder="Brand, size, notes for neighbors…"
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="mt-8 border-t border-zinc-100 pt-6">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Category
+              </p>
+              <CategoryList category={category} onChange={setCategory} />
+            </div>
+          </section>
+
+          {/* 3 — Stock */}
+          <section className="rounded-2xl bg-white px-6 py-7 shadow-sm ring-1 ring-zinc-100">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-zinc-500">
+              3 · How many
+            </h2>
+            <div className="mt-5 grid gap-5 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-semibold">On the shelf</span>
                 <input
                   type="number"
                   min={1}
                   max={500}
-                  className="mt-1 w-full rounded-xl border border-zinc-200 px-4 py-3 font-normal"
+                  className="mt-2 w-full rounded-xl border border-zinc-200 px-4 py-3.5 text-lg font-semibold tabular-nums"
                   value={stockQty}
                   onChange={e => setStockQty(e.target.value)}
                 />
-                <span className="mt-1 block text-xs font-normal text-zinc-500">
-                  How many units you have available.
+                <span className="mt-1.5 block text-xs leading-relaxed text-zinc-500">
+                  Units available now
                 </span>
               </label>
-              <label className="block text-sm font-semibold">
-                Max per patron (this item)
+              <label className="block">
+                <span className="text-sm font-semibold">Limit per basket</span>
                 <input
                   type="number"
                   min={1}
                   max={50}
-                  className="mt-1 w-full rounded-xl border border-zinc-200 px-4 py-3 font-normal"
+                  className="mt-2 w-full rounded-xl border border-zinc-200 px-4 py-3.5 text-lg font-semibold tabular-nums"
                   value={maxPerOrder}
                   onChange={e => setMaxPerOrder(e.target.value)}
                 />
-                <span className="mt-1 block text-xs font-normal text-zinc-500">
-                  Cap for this food in one basket (separate from the Admin
-                  total-unit patron cap).
+                <span className="mt-1.5 block text-xs leading-relaxed text-zinc-500">
+                  Max of this item a neighbor can take
                 </span>
               </label>
             </div>
+          </section>
+
+          {message ? (
+            <p
+              className={`rounded-xl px-4 py-3.5 text-sm font-medium ${
+                messageTone === "err"
+                  ? "bg-red-50 text-red-800"
+                  : "bg-emerald-50 text-emerald-900"
+              }`}
+            >
+              {message}
+            </p>
           ) : null}
-          <div>
-            <p className="mb-2 text-sm font-semibold">Category</p>
-            <div className="flex flex-wrap gap-2">
-              {LISTING_CATEGORIES.map(cat => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setCategory(cat)}
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
-                    category === cat
-                      ? "bg-zinc-900 text-white"
-                      : "bg-zinc-100 text-zinc-800"
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-          </div>
-          {message ? <p className="text-sm text-zinc-600">{message}</p> : null}
+
           <button
             type="submit"
-            disabled={busy || photoBusy}
-            className="w-full rounded-xl bg-zinc-900 py-3 font-semibold text-white disabled:opacity-50"
+            disabled={!canPost}
+            className="w-full rounded-2xl bg-zinc-900 py-4 text-base font-semibold text-white shadow-sm disabled:opacity-40"
           >
-            {busy ? "Posting…" : photoBusy ? "Uploading photo…" : "Post listing"}
+            {busy
+              ? "Adding…"
+              : photoBusy
+                ? "Uploading photo…"
+                : "Add to shelf"}
           </button>
-        </div>
-      </form>
+        </form>
+    </div>
+  );
+}
 
-      <div>
-        <h2 className="mb-3 text-xl font-semibold">Your listings</h2>
-        <div className="space-y-3">
-          {myListings.map(item => (
-            <ListingCard
-              key={item.id}
-              item={item}
-              href={`/listing/${item.id}`}
-            />
-          ))}
-          {myListings.length === 0 ? (
-            <p className="text-zinc-500">No listings yet.</p>
-          ) : null}
+function PhotoField({
+  preview,
+  photoBusy,
+  disabled,
+  fileRef,
+  onPick,
+  onRemove,
+  compact = false,
+}: {
+  preview: string | null;
+  photoBusy: boolean;
+  disabled: boolean;
+  fileRef: RefObject<HTMLInputElement | null>;
+  onPick: (file: File | null) => void;
+  onRemove: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="sr-only"
+        disabled={disabled || photoBusy}
+        onChange={e => onPick(e.target.files?.[0] ?? null)}
+      />
+      <button
+        type="button"
+        disabled={disabled || photoBusy}
+        onClick={() => fileRef.current?.click()}
+        className={`group relative w-full overflow-hidden rounded-xl border border-dashed border-zinc-300 bg-zinc-50 text-left transition hover:border-zinc-400 hover:bg-zinc-100 disabled:opacity-50 ${
+          compact ? "aspect-square" : "h-44"
+        }`}
+      >
+        {preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={preview}
+            alt="Item"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span
+            className={`flex h-full flex-col items-center justify-center gap-1 px-3 text-center text-zinc-500 ${
+              compact ? "text-xs" : "text-sm"
+            }`}
+          >
+            <span className="font-semibold text-zinc-700">
+              {photoBusy ? "Uploading…" : "Add photo"}
+            </span>
+            {!compact ? (
+              <span className="text-xs">Tap to choose from your device</span>
+            ) : null}
+          </span>
+        )}
+      </button>
+      {preview ? (
+        <button
+          type="button"
+          className="mt-1.5 text-xs font-semibold text-zinc-500 underline"
+          onClick={onRemove}
+        >
+          Remove
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function CategoryList({
+  category,
+  onChange,
+}: {
+  category: ListingCategory;
+  onChange: (c: ListingCategory) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const canScroll = el.scrollHeight > el.clientHeight;
+      if (!canScroll) return;
+      const atTop = el.scrollTop <= 0;
+      const atBottom =
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) {
+        el.scrollTop += e.deltaY;
+        e.preventDefault();
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full items-center justify-between rounded-xl border border-zinc-200 bg-white px-4 py-3.5 text-left text-sm font-semibold text-zinc-900"
+      >
+        <span>{category}</span>
+        <span className="text-xs font-medium text-zinc-400">
+          {open ? "Close" : "Change"}
+        </span>
+      </button>
+      {open ? (
+        <div
+          ref={scrollerRef}
+          role="listbox"
+          aria-label="Category"
+          className="absolute z-20 mt-2 max-h-52 w-full overflow-y-scroll overscroll-contain rounded-xl border border-zinc-200 bg-white py-1 shadow-lg [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-400"
+        >
+          <ul className="m-0 list-none p-0">
+            {LISTING_CATEGORIES.map(cat => {
+              const selected = category === cat;
+              return (
+                <li key={cat} role="option" aria-selected={selected}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(cat);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm font-semibold transition ${
+                      selected
+                        ? "bg-zinc-900 text-white"
+                        : "text-zinc-800 hover:bg-zinc-50"
+                    }`}
+                  >
+                    <span>{cat}</span>
+                    {selected ? (
+                      <span className="text-xs font-medium text-zinc-300">
+                        Selected
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }

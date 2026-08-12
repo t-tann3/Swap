@@ -26,6 +26,8 @@ import {
 } from "./routes/stripeWebhook.js";
 import { uploadsRouter } from "./routes/uploads.js";
 import { pushRouter } from "./routes/push.js";
+import { pantryTeamRouter } from "./routes/pantryTeam.js";
+import { pantryPatronsRouter } from "./routes/pantryPatrons.js";
 import { initFirebaseAdmin, pushConfigured } from "./push.js";
 import { relaiServerApiConfigured } from "./relai.js";
 import { paymentsEnabled } from "./stripe.js";
@@ -77,6 +79,8 @@ app.use("/api", marketplaceRouter);
 app.use("/api", basketRouter);
 app.use("/api", productsRouter);
 app.use("/api", pushRouter);
+app.use("/api", pantryTeamRouter);
+app.use("/api", pantryPatronsRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/admin", adminRouter);
 

@@ -109,10 +109,18 @@ paymentsRouter.post("/connect/onboard", requireAuth, async (req, res) => {
     });
   }
 
+  if (isPantryMode() || profile.isPantrySeller) {
+    res.status(409).json({
+      code: "pantry_no_stripe",
+      message: "Pantry mode does not use Stripe payouts.",
+    });
+    return;
+  }
+
   if (!profile.roles.includes("seller")) {
     res.status(403).json({
       code: "seller_required",
-      message: "Enable the Pantry role before setting up payouts.",
+      message: "Enable the seller role before setting up payouts.",
     });
     return;
   }

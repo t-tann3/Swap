@@ -31,7 +31,7 @@ export default function ListingDetailPage() {
   const [savingCaps, setSavingCaps] = useState(false);
 
   useEffect(() => {
-    void apiRequest<Listing>(`/api/listings/${params.id}`)
+    void apiRequest<Listing>(`/api/listings/${params.id}`, { auth: true })
       .then(item => {
         setListing(item);
         setEditStock(String(item.stockQty ?? 1));

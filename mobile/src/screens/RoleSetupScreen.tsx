@@ -4,22 +4,42 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useMarketplace } from "../marketplace/MarketplaceContext";
 import type { MarketplaceRole } from "../marketplace/types";
 
+type Persona = Extract<MarketplaceRole, "buyer" | "seller" | "admin">;
+
 export function RoleSetupScreen() {
-  const { setRoles } = useMarketplace();
-  const [selected, setSelected] = useState<MarketplaceRole[]>([]);
+  const { setRoles, setActiveMode, refresh, profile } = useMarketplace();
+  const [selected, setSelected] = useState<Persona | null>(null);
   const [busy, setBusy] = useState(false);
 
-  function toggle(role: MarketplaceRole) {
-    setSelected(prev =>
-      prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role],
-    );
+  const options: { role: Persona; title: string; body: string }[] = [
+    {
+      role: "buyer",
+      title: "Neighbor",
+      body: "Browse the pantry and pick up baskets.",
+    },
+    {
+      role: "seller",
+      title: "Pantry",
+      body: "Stock the pantry and fulfill neighbor orders.",
+    },
+  ];
+  if (profile?.adminEligible) {
+    options.push({
+      role: "admin",
+      title: "Admin",
+      body: "Operate pantry settings and platform tools.",
+    });
   }
 
   async function onContinue() {
-    if (selected.length === 0 || busy) return;
+    if (!selected || busy) return;
     setBusy(true);
     try {
-      await setRoles(selected);
+      if (selected === "buyer" || selected === "seller") {
+        await setActiveMode(selected);
+      }
+      await setRoles([selected]);
+      await refresh();
     } finally {
       setBusy(false);
     }
@@ -28,36 +48,25 @@ export function RoleSetupScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.brand}>Swap</Text>
-      <Text style={styles.title}>How will you use Swap?</Text>
+      <Text style={styles.title}>Choose your account type</Text>
       <Text style={styles.subtitle}>
-        Pick one or both. You can change this later in Account.
+        Pick one. Each account type has its own tools and login experience.
       </Text>
 
-      <Pressable
-        style={[styles.option, selected.includes("buyer") && styles.optionOn]}
-        onPress={() => toggle("buyer")}>
-        <Text style={styles.optionTitle}>Neighbor</Text>
-        <Text style={styles.optionBody}>
-          Browse the pantry and pick up baskets.
-        </Text>
-      </Pressable>
+      {options.map(opt => (
+        <Pressable
+          key={opt.role}
+          style={[styles.option, selected === opt.role && styles.optionOn]}
+          onPress={() => setSelected(opt.role)}>
+          <Text style={styles.optionTitle}>{opt.title}</Text>
+          <Text style={styles.optionBody}>{opt.body}</Text>
+        </Pressable>
+      ))}
 
       <Pressable
-        style={[styles.option, selected.includes("seller") && styles.optionOn]}
-        onPress={() => toggle("seller")}>
-        <Text style={styles.optionTitle}>Pantry</Text>
-        <Text style={styles.optionBody}>
-          Stock the pantry and fulfill neighbor orders.
-        </Text>
-      </Pressable>
-
-      <Pressable
-        style={[
-          styles.button,
-          (selected.length === 0 || busy) && styles.buttonDisabled,
-        ]}
-        onPress={onContinue}
-        disabled={selected.length === 0 || busy}>
+        style={[styles.button, (!selected || busy) && styles.buttonDisabled]}
+        onPress={() => void onContinue()}
+        disabled={!selected || busy}>
         <Text style={styles.buttonText}>Continue</Text>
       </Pressable>
     </View>

@@ -5,6 +5,7 @@ import {
   FlatList,
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,6 +14,7 @@ import {
 
 import { ListingCard } from "../components/ListingCard";
 import {
+  DEFAULT_PANTRY_CATEGORY,
   LISTING_CATEGORIES,
   type ListingCategory,
 } from "../marketplace/categories";
@@ -30,7 +32,9 @@ export function SellScreen({ navigation, route }: Props) {
   const [price, setPrice] = useState("");
   const [stockQty, setStockQty] = useState("1");
   const [maxPerOrder, setMaxPerOrder] = useState("1");
-  const [category, setCategory] = useState<ListingCategory>("General");
+  const [category, setCategory] = useState<ListingCategory>(
+    DEFAULT_PANTRY_CATEGORY,
+  );
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -46,9 +50,9 @@ export function SellScreen({ navigation, route }: Props) {
     setScanNote(
       draft.barcode
         ? draft.imageUrl
-          ? `Barcode ${draft.barcode} — catalog photo loaded. Set stock and post.`
-          : `Barcode ${draft.barcode} filled title/details. Set stock and post.`
-        : "Filled from catalog. Adjust stock, then post.",
+          ? `Barcode ${draft.barcode} — catalog photo loaded. You can replace it with your own.`
+          : `Barcode ${draft.barcode} filled title/details. Add your own photo if you want, then post.`
+        : "Filled from catalog. Adjust photo and stock, then post.",
     );
     navigation.setParams({ draft: undefined });
   }, [route.params?.draft, navigation]);
@@ -68,7 +72,10 @@ export function SellScreen({ navigation, route }: Props) {
     setPhotoBusy(true);
     try {
       const url = await pickAndUploadPhoto(source);
-      if (url) setImageUrl(url);
+      if (url) {
+        setImageUrl(url);
+        setScanNote("Your photo uploaded. Set stock and post.");
+      }
     } catch (err) {
       Alert.alert(
         "Photo failed",
@@ -122,7 +129,7 @@ export function SellScreen({ navigation, route }: Props) {
       setPrice("");
       setStockQty("1");
       setMaxPerOrder("1");
-      setCategory("General");
+      setCategory(DEFAULT_PANTRY_CATEGORY);
       setImageUrl(null);
       setScanNote(null);
       Alert.alert(
@@ -156,7 +163,7 @@ export function SellScreen({ navigation, route }: Props) {
           </Text>
           <Text style={styles.help}>
             {pantryMode
-              ? "Scan a barcode to fill the listing and catalog photo, then set stock and post."
+              ? "Scan a barcode to fill the listing, then set stock and post. Use your own photo or keep the catalog one."
               : "Items must fit a Relai Exchange Zone compartment. All doors are the same size. A listing photo is optional."}
           </Text>
           {pantryMode ? (
@@ -174,47 +181,41 @@ export function SellScreen({ navigation, route }: Props) {
             </View>
           ) : null}
           {scanNote ? <Text style={styles.scanNote}>{scanNote}</Text> : null}
-          {pantryMode ? (
-            previewUri ? (
-              <>
-                <Text style={styles.label}>Catalog photo</Text>
-                <Image source={{ uri: previewUri }} style={styles.preview} />
-              </>
-            ) : null
+          <Text style={styles.label}>Photo (optional)</Text>
+          {previewUri ? (
+            <Image source={{ uri: previewUri }} style={styles.preview} />
           ) : (
-            <>
-              <Text style={styles.label}>Photo (optional)</Text>
-              {previewUri ? (
-                <Image source={{ uri: previewUri }} style={styles.preview} />
-              ) : (
-                <View style={styles.previewEmpty}>
-                  <Text style={styles.previewEmptyText}>No photo yet</Text>
-                </View>
-              )}
-              <View style={styles.photoRow}>
-                <Pressable
-                  style={[styles.secondary, photoBusy && styles.buttonDisabled]}
-                  disabled={photoBusy || busy}
-                  onPress={() => void onPickPhoto("camera")}>
-                  <Text style={styles.secondaryText}>Take photo</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.secondary, photoBusy && styles.buttonDisabled]}
-                  disabled={photoBusy || busy}
-                  onPress={() => void onPickPhoto("library")}>
-                  <Text style={styles.secondaryText}>Choose</Text>
-                </Pressable>
-                {imageUrl ? (
-                  <Pressable
-                    style={styles.secondary}
-                    disabled={busy}
-                    onPress={() => setImageUrl(null)}>
-                    <Text style={styles.secondaryText}>Remove</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            </>
+            <View style={styles.previewEmpty}>
+              <Text style={styles.previewEmptyText}>No photo yet</Text>
+            </View>
           )}
+          <View style={styles.photoRow}>
+            <Pressable
+              style={[styles.secondary, photoBusy && styles.buttonDisabled]}
+              disabled={photoBusy || busy}
+              onPress={() => void onPickPhoto("camera")}>
+              <Text style={styles.secondaryText}>
+                {photoBusy ? "Uploading…" : "Take photo"}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.secondary, photoBusy && styles.buttonDisabled]}
+              disabled={photoBusy || busy}
+              onPress={() => void onPickPhoto("library")}>
+              <Text style={styles.secondaryText}>Choose</Text>
+            </Pressable>
+            {imageUrl ? (
+              <Pressable
+                style={styles.secondary}
+                disabled={busy || photoBusy}
+                onPress={() => {
+                  setImageUrl(null);
+                  setScanNote(null);
+                }}>
+                <Text style={styles.secondaryText}>Remove</Text>
+              </Pressable>
+            ) : null}
+          </View>
           <TextInput
             style={styles.input}
             placeholder="Title"
@@ -261,22 +262,28 @@ export function SellScreen({ navigation, route }: Props) {
             </>
           ) : null}
           <Text style={styles.label}>Category</Text>
-          <View style={styles.categoryRow}>
+          <ScrollView
+            style={styles.categoryList}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled">
             {LISTING_CATEGORIES.map(cat => {
               const active = category === cat;
               return (
                 <Pressable
                   key={cat}
-                  style={[styles.catChip, active && styles.catChipOn]}
+                  style={[styles.catRow, active && styles.catRowOn]}
                   onPress={() => setCategory(cat)}>
                   <Text
-                    style={[styles.catChipText, active && styles.catChipTextOn]}>
+                    style={[styles.catRowText, active && styles.catRowTextOn]}>
                     {cat}
                   </Text>
+                  {active ? (
+                    <Text style={styles.catSelected}>Selected</Text>
+                  ) : null}
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
           <Pressable
             style={[styles.button, busy && styles.buttonDisabled]}
             onPress={onPost}
@@ -408,31 +415,39 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
-  categoryRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 14,
-  },
-  catChip: {
+  categoryList: {
     backgroundColor: "#fff",
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#e5e7eb",
+    marginBottom: 14,
+    maxHeight: 220,
+    overflow: "hidden",
   },
-  catChipOn: {
+  catRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  catRowOn: {
     backgroundColor: "#111827",
-    borderColor: "#111827",
   },
-  catChipText: {
-    fontSize: 13,
+  catRowText: {
+    fontSize: 15,
     fontWeight: "600",
     color: "#111827",
   },
-  catChipTextOn: {
+  catRowTextOn: {
     color: "#fff",
+  },
+  catSelected: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#d1d5db",
   },
   button: {
     backgroundColor: "#111827",

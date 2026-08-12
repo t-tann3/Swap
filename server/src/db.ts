@@ -9,6 +9,10 @@ import type {
   Favorite,
   Listing,
   Order,
+  Pantry,
+  PantryInvite,
+  PantryMembership,
+  PantryPatron,
   PantrySettings,
   Profile,
   StockAdjustment,
@@ -50,6 +54,7 @@ function migrateDb(current: Database): Database {
     if (l.imageUrl === undefined) l.imageUrl = null;
     if (l.stockQty === undefined) l.stockQty = 1;
     if (l.maxPerOrder === undefined) l.maxPerOrder = 1;
+    if (l.createdByUserId === undefined) l.createdByUserId = l.sellerUserId;
   }
   for (const order of current.orders) {
     const o = order as Order & { compartmentSize?: unknown };
@@ -88,7 +93,36 @@ function migrateDb(current: Database): Database {
     if (o.platformDisputeOpenedAt === undefined) {
       o.platformDisputeOpenedAt = null;
     }
+    if (o.acceptedByUserId === undefined) o.acceptedByUserId = null;
+    if (o.acceptedByName === undefined) o.acceptedByName = null;
+    if (o.droppedOffByUserId === undefined) o.droppedOffByUserId = null;
+    if (o.droppedOffByName === undefined) o.droppedOffByName = null;
     if (o.cancelledReason === undefined) o.cancelledReason = null;
+  }
+  for (const adj of current.stockAdjustments ?? []) {
+    if (adj.actorUserId === undefined) adj.actorUserId = adj.sellerUserId;
+  }
+  if (!Array.isArray(current.pantries)) current.pantries = [];
+  if (!Array.isArray(current.pantryMemberships)) current.pantryMemberships = [];
+  if (!Array.isArray(current.pantryInvites)) current.pantryInvites = [];
+  if (!Array.isArray(current.pantryPatrons)) current.pantryPatrons = [];
+  for (const pantry of current.pantries) {
+    const row = pantry as Pantry;
+    if (row.patronAllowlistEnabled === undefined) {
+      row.patronAllowlistEnabled = false;
+    }
+  }
+  for (const m of current.pantryMemberships) {
+    const row = m as PantryMembership;
+    if (row.firstName === undefined) row.firstName = null;
+    if (row.lastName === undefined) row.lastName = null;
+    if (row.phone === undefined) row.phone = null;
+  }
+  for (const invite of current.pantryInvites) {
+    const row = invite as PantryInvite;
+    if (row.firstName === undefined) row.firstName = null;
+    if (row.lastName === undefined) row.lastName = null;
+    if (row.phone === undefined) row.phone = null;
   }
   if (!Array.isArray(current.baskets)) {
     current.baskets = [];
@@ -154,6 +188,10 @@ async function loadFromMongo(database: MongoDb): Promise<Database | null> {
     baskets,
     pantrySettingsDocs,
     stockAdjustments,
+    pantries,
+    pantryMemberships,
+    pantryInvites,
+    pantryPatrons,
     stripeEvents,
     relaiEvents,
   ] = await Promise.all([
@@ -164,6 +202,10 @@ async function loadFromMongo(database: MongoDb): Promise<Database | null> {
     database.collection("baskets").find({}).toArray(),
     database.collection("pantrySettings").find({}).toArray(),
     database.collection("stockAdjustments").find({}).toArray(),
+    database.collection("pantries").find({}).toArray(),
+    database.collection("pantryMemberships").find({}).toArray(),
+    database.collection("pantryInvites").find({}).toArray(),
+    database.collection("pantryPatrons").find({}).toArray(),
     database.collection("processedStripeEvents").find({}).toArray(),
     database.collection("processedRelaiEvents").find({}).toArray(),
   ]);
@@ -180,6 +222,16 @@ async function loadFromMongo(database: MongoDb): Promise<Database | null> {
       : defaultPantrySettings(),
     stockAdjustments: stockAdjustments.map(d =>
       stripMongoId(d as unknown as StockAdjustment),
+    ),
+    pantries: pantries.map(d => stripMongoId(d as unknown as Pantry)),
+    pantryMemberships: pantryMemberships.map(d =>
+      stripMongoId(d as unknown as PantryMembership),
+    ),
+    pantryInvites: pantryInvites.map(d =>
+      stripMongoId(d as unknown as PantryInvite),
+    ),
+    pantryPatrons: pantryPatrons.map(d =>
+      stripMongoId(d as unknown as PantryPatron),
     ),
     processedStripeEvents: stripeEvents.map(e => String(e._id)),
     processedRelaiEvents: relaiEvents.map(e => String(e._id)),
@@ -270,6 +322,30 @@ async function persistToMongo(current: Database): Promise<void> {
     ),
     syncKeyedCollection(
       database,
+      "pantries",
+      (current.pantries ?? []) as unknown as Record<string, unknown>[],
+      p => String(p.id),
+    ),
+    syncKeyedCollection(
+      database,
+      "pantryMemberships",
+      (current.pantryMemberships ?? []) as unknown as Record<string, unknown>[],
+      m => String(m.id),
+    ),
+    syncKeyedCollection(
+      database,
+      "pantryInvites",
+      (current.pantryInvites ?? []) as unknown as Record<string, unknown>[],
+      i => String(i.id),
+    ),
+    syncKeyedCollection(
+      database,
+      "pantryPatrons",
+      (current.pantryPatrons ?? []) as unknown as Record<string, unknown>[],
+      p => String(p.id),
+    ),
+    syncKeyedCollection(
+      database,
       "processedStripeEvents",
       current.processedStripeEvents.map(id => ({ _id: id })),
       e => String(e._id),
@@ -303,6 +379,12 @@ export async function initDb(): Promise<void> {
     mongo.collection("orders").createIndex({ status: 1 }),
     mongo.collection("listings").createIndex({ status: 1 }),
     mongo.collection("favorites").createIndex({ userId: 1 }),
+    mongo.collection("pantries").createIndex({ ownerUserId: 1 }),
+    mongo.collection("pantryMemberships").createIndex({ userId: 1 }),
+    mongo.collection("pantryMemberships").createIndex({ pantryId: 1 }),
+    mongo.collection("pantryInvites").createIndex({ email: 1, status: 1 }),
+    mongo.collection("pantryPatrons").createIndex({ pantryId: 1, email: 1 }),
+    mongo.collection("pantryPatrons").createIndex({ email: 1, status: 1 }),
   ]);
 
   const existing = await loadFromMongo(mongo);

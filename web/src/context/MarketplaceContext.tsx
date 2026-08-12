@@ -45,11 +45,7 @@ interface MarketplaceContextValue {
   selectedCategory: string;
   setSelectedCategory: (c: string) => void;
   refresh: () => Promise<void>;
-  setRoles: (
-    roles: MarketplaceRole[],
-    bio?: string,
-    adminEnabled?: boolean,
-  ) => Promise<void>;
+  setRoles: (roles: MarketplaceRole[], bio?: string) => Promise<void>;
   createListing: (input: CreateListingInput) => Promise<Listing>;
   updateListing: (
     id: string,
@@ -119,11 +115,6 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
       const params = new URLSearchParams({ status: "available" });
       if (searchQuery.trim()) params.set("q", searchQuery.trim());
       if (selectedCategory) params.set("category", selectedCategory);
-      const mineParams = new URLSearchParams({
-        sellerUserId: me.user_id,
-        status: "all",
-      });
-
       const [
         profileRes,
         listingsRes,
@@ -134,8 +125,10 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
         payCfg,
       ] = await Promise.all([
         apiRequest<UserProfile>("/api/me/profile", { auth: true }),
-        apiRequest<{ data: Listing[] }>(`/api/listings?${params}`),
-        apiRequest<{ data: Listing[] }>(`/api/listings?${mineParams}`),
+        apiRequest<{ data: Listing[] }>(`/api/listings?${params}`, {
+          auth: true,
+        }),
+        apiRequest<{ data: Listing[] }>("/api/me/listings", { auth: true }),
         apiRequest<{ data: Listing[] }>("/api/favorites", { auth: true }),
         apiRequest<{ data: Order[] }>("/api/orders?as=buyer", { auth: true }),
         apiRequest<{ data: Order[] }>("/api/orders?as=seller", {
@@ -185,14 +178,17 @@ export function MarketplaceProvider({ children }: { children: ReactNode }) {
   }, [me, status, refresh]);
 
   const setRoles = useCallback(
-    async (roles: MarketplaceRole[], bio?: string, adminEnabled?: boolean) => {
-      const selfServe = roles.filter(r => r === "buyer" || r === "seller");
-      const body: Record<string, unknown> = { roles: selfServe, bio };
-      if (adminEnabled !== undefined) body.adminEnabled = adminEnabled;
+    async (roles: MarketplaceRole[], bio?: string) => {
+      const chosen = roles.find(
+        r => r === "buyer" || r === "seller" || r === "admin",
+      );
+      if (!chosen) {
+        throw new Error("Choose Neighbor, Pantry, or Admin.");
+      }
       const next = await apiRequest<UserProfile>("/api/me/profile", {
         method: "PUT",
         auth: true,
-        body: JSON.stringify(body),
+        body: JSON.stringify({ roles: [chosen], bio }),
       });
       setProfile({
         userId: next.userId,

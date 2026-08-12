@@ -47,7 +47,7 @@ export default function BrowsePage() {
         onChange={e => setSearchQuery(e.target.value)}
       />
 
-      <div className="mb-5 flex flex-wrap gap-2">
+      <div className="mb-5 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {["", ...LISTING_CATEGORIES].map(cat => {
           const label = cat || "All";
           const active = selectedCategory === cat;
@@ -56,7 +56,7 @@ export default function BrowsePage() {
               key={label}
               type="button"
               onClick={() => setSelectedCategory(cat)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold whitespace-nowrap ${
                 active
                   ? "bg-zinc-900 text-white"
                   : "bg-white text-zinc-800 ring-1 ring-zinc-200"

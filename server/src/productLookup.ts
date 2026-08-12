@@ -1,4 +1,7 @@
-import type { ListingCategory } from "./categories.js";
+import {
+  DEFAULT_PANTRY_CATEGORY,
+  type ListingCategory,
+} from "./categories.js";
 import { log } from "./logger.js";
 import { saveUploadFromBuffer } from "./uploads.js";
 
@@ -351,7 +354,7 @@ async function lookupSpoonacular(
       barcode,
       title,
       description: spoonacularDescription(body),
-      category: "Food",
+      category: DEFAULT_PANTRY_CATEGORY,
       brand,
       quantity,
       imageUrl,
@@ -439,7 +442,7 @@ async function lookupOpenFoodFacts(
     barcode,
     title,
     description: pickOffDescription(product),
-    category: "Food",
+    category: DEFAULT_PANTRY_CATEGORY,
     brand:
       typeof product.brands === "string" && product.brands.trim()
         ? product.brands.trim().slice(0, 120)

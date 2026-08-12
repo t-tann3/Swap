@@ -14,7 +14,8 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (status === "signedIn") router.replace("/browse");
+    // AppShell routes to onboarding or the correct persona home.
+    if (status === "signedIn") router.replace("/");
   }, [status, router]);
 
   async function onSend(e: FormEvent) {
@@ -39,7 +40,7 @@ export default function LoginPage() {
     setBusy(true);
     try {
       await verifyCode(email, code);
-      router.replace("/browse");
+      router.replace("/");
     } catch {
       // lastError set
     } finally {

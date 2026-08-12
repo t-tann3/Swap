@@ -288,6 +288,7 @@ export function applyStockAdjustment(
   delta: number,
   reason = "",
   ts = new Date().toISOString(),
+  actorUserId: string | null = null,
 ): StockAdjustment {
   const n = Math.trunc(delta);
   if (n === 0) throw new Error("invalid_delta");
@@ -307,6 +308,7 @@ export function applyStockAdjustment(
     id: newId("stk"),
     listingId: listing.id,
     sellerUserId,
+    actorUserId: actorUserId ?? sellerUserId,
     delta: n,
     reason: trimmed,
     previousQty,

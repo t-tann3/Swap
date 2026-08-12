@@ -19,7 +19,7 @@ function listing(partial: Partial<Listing> = {}): Listing {
     title: "Beans",
     description: "Canned",
     priceCents: 0,
-    category: "Food",
+    category: "Pantry staples",
     condition: "good",
     locationLabel: "EZ",
     status: "available",

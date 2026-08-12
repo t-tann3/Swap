@@ -1,27 +1,27 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "../../context/AuthContext";
 import { useMarketplace } from "../../context/MarketplaceContext";
 import { apiRequest } from "../../lib/api";
-import type { MarketplaceRole } from "../../lib/types";
 
 export default function AccountPage() {
   const { me, signOut } = useAuth();
   const {
     profile,
-    setRoles,
-    activeMode,
-    setActiveMode,
     ordersAsBuyer,
     ordersAsSeller,
     myListings,
     favorites,
     refresh,
+    pantryMode,
   } = useMarketplace();
   const roles = profile?.roles ?? [];
+  const isNeighbor = roles.includes("buyer") && !roles.includes("seller");
+  const isPantry = roles.includes("seller") && !roles.includes("buyer");
+  const isAdmin =
+    roles.includes("admin") && !roles.includes("buyer") && !roles.includes("seller");
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [payoutsReady, setPayoutsReady] = useState(false);
   const [creditedCents, setCreditedCents] = useState(0);
@@ -30,20 +30,24 @@ export default function AccountPage() {
 
   useEffect(() => {
     void (async () => {
-      try {
-        const status = await apiRequest<{
-          enabled: boolean;
-          payoutsReady: boolean;
-          creditedCents?: number;
-        }>("/api/payments/connect/status", { auth: true });
-        setPaymentsEnabled(status.enabled);
-        setPayoutsReady(status.payoutsReady);
-        setCreditedCents(status.creditedCents ?? 0);
-      } catch {
-        // ignore
+      if (isPantry && !pantryMode) {
+        try {
+          const status = await apiRequest<{
+            enabled: boolean;
+            payoutsReady: boolean;
+            creditedCents?: number;
+          }>("/api/payments/connect/status", { auth: true });
+          setPaymentsEnabled(status.enabled);
+          setPayoutsReady(status.payoutsReady);
+          setCreditedCents(status.creditedCents ?? 0);
+        } catch {
+          // ignore
+        }
+      } else {
+        setPaymentsEnabled(false);
       }
     })();
-  }, [profile?.userId]);
+  }, [profile?.userId, pantryMode, isPantry]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -65,31 +69,6 @@ export default function AccountPage() {
         .finally(() => void refresh());
     }
   }, [refresh]);
-
-  async function selectMode(mode: "buyer" | "seller") {
-    setActiveMode(mode);
-    if (!roles.includes(mode)) {
-      const next = [
-        ...roles.filter(
-          (r): r is "buyer" | "seller" => r === "buyer" || r === "seller",
-        ),
-        mode,
-      ];
-      await setRoles([...new Set(next)] as MarketplaceRole[]);
-    }
-  }
-
-  async function toggleAdmin() {
-    if (!profile?.adminEligible) return;
-    const selfServe = roles.filter(
-      (r): r is "buyer" | "seller" => r === "buyer" || r === "seller",
-    );
-    await setRoles(
-      (selfServe.length ? selfServe : ["buyer", "seller"]) as MarketplaceRole[],
-      undefined,
-      !roles.includes("admin"),
-    );
-  }
 
   async function startConnect() {
     setConnectBusy(true);
@@ -114,73 +93,19 @@ export default function AccountPage() {
       </p>
       <p className="font-medium">{me?.email ?? me?.user_id}</p>
       <p className="mt-3 text-xs font-bold uppercase tracking-wide text-zinc-500">
-        Environment
+        Account type
       </p>
-      <p className="font-medium">{me?.app.environment}</p>
-
-      <h2 className="mt-8 text-lg font-semibold">Using app as</h2>
-      <p className="mt-1 text-sm text-zinc-600">
-        Switch persona for Neighbor vs Pantry tools. Both roles can stay
-        enabled.
+      <p className="font-medium">
+        {isAdmin
+          ? "Admin account"
+          : isPantry
+            ? "Pantry account"
+            : "Neighbor account"}
       </p>
-      <div className="mt-3 space-y-2">
-        {(
-          [
-            ["buyer", "Neighbor"],
-            ["seller", "Pantry"],
-          ] as const
-        ).map(([mode, label]) => (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => void selectMode(mode)}
-            className={`w-full rounded-xl border-2 px-4 py-3 text-left font-semibold ${
-              activeMode === mode ? "border-zinc-900" : "border-zinc-100"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-        {profile?.adminEligible ? (
-          <div
-            className={`rounded-xl border-2 px-4 py-3 ${
-              roles.includes("admin")
-                ? "border-zinc-900 bg-zinc-50"
-                : "border-zinc-100"
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => void toggleAdmin()}
-              className="w-full text-left"
-            >
-              <p className="font-semibold">Admin (operator)</p>
-              <p className="mt-1 text-sm text-zinc-600">
-                {roles.includes("admin")
-                  ? "Click to hide Admin nav and ops tools. Neighbor/Pantry stay above."
-                  : "Click to restore Admin nav and ops tools."}
-              </p>
-            </button>
-            {roles.includes("admin") ? (
-              <Link
-                href="/admin"
-                className="mt-3 inline-block text-sm font-semibold text-zinc-900 underline"
-              >
-                Open admin console
-              </Link>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
 
-      {roles.includes("seller") && paymentsEnabled ? (
+      {isPantry && paymentsEnabled && !pantryMode ? (
         <div className="mt-8">
-          <h2 className="text-lg font-semibold">Pantry payouts</h2>
-          <p className="mt-2 text-sm text-zinc-600">
-            {payoutsReady
-              ? "Neighbor payments are held until pickup, then transferred to you (minus platform fee)."
-              : "You can list and sell right now. Add a bank account when you want to withdraw — your earnings are held for you until then."}
-          </p>
+          <h2 className="text-lg font-semibold">Seller payouts</h2>
           <p className="mt-2 text-sm font-medium">
             Status: {payoutsReady ? "Ready to receive payouts" : "Not set up"}
           </p>
@@ -209,13 +134,24 @@ export default function AccountPage() {
         </div>
       ) : null}
 
-      <h2 className="mt-8 text-lg font-semibold">Activity</h2>
-      <ul className="mt-2 space-y-1 text-sm text-zinc-700">
-        <li>Neighbor orders: {ordersAsBuyer.length}</li>
-        <li>Pantry orders: {ordersAsSeller.length}</li>
-        <li>Listings: {myListings.length}</li>
-        <li>Favorites: {favorites.length}</li>
-      </ul>
+      {!isAdmin ? (
+        <>
+          <h2 className="mt-8 text-lg font-semibold">Activity</h2>
+          <ul className="mt-2 space-y-1 text-sm text-zinc-700">
+            {isNeighbor ? (
+              <>
+                <li>Orders: {ordersAsBuyer.length}</li>
+                <li>Saved: {favorites.length}</li>
+              </>
+            ) : (
+              <>
+                <li>Pantry orders: {ordersAsSeller.length}</li>
+                <li>Listings: {myListings.length}</li>
+              </>
+            )}
+          </ul>
+        </>
+      ) : null}
 
       <button
         type="button"

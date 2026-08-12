@@ -251,6 +251,13 @@ export function OrderDetailScreen({ navigation, route }: Props) {
         </Text>
       ) : null}
 
+      {order.acceptedByName ? (
+        <Text style={styles.meta}>Accepted by: {order.acceptedByName}</Text>
+      ) : null}
+      {order.droppedOffByName ? (
+        <Text style={styles.meta}>Dropped off by: {order.droppedOffByName}</Text>
+      ) : null}
+
       {order.status === "completed" &&
       order.completedReason !== "no_show" &&
       (order.relaiPickupVerifiedAt || order.completedAt) ? (

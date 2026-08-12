@@ -210,6 +210,17 @@ export default function OrderDetailPage() {
           </p>
         ) : null}
 
+        {order.acceptedByName ? (
+          <p className="mt-1 text-sm text-zinc-500">
+            Accepted by: {order.acceptedByName}
+          </p>
+        ) : null}
+        {order.droppedOffByName ? (
+          <p className="mt-1 text-sm text-zinc-500">
+            Dropped off by: {order.droppedOffByName}
+          </p>
+        ) : null}
+
         {order.status === "completed" &&
         order.completedReason !== "no_show" &&
         (order.relaiPickupVerifiedAt || order.completedAt) ? (

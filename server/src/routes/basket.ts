@@ -19,6 +19,7 @@ import {
   listingMaxPerOrder,
   releaseListingUnits,
 } from "../pantry.js";
+import { assertCanShopSeller } from "../pantryPatrons.js";
 import type { Basket, Listing, Order } from "../types.js";
 
 export const basketRouter = Router();
@@ -28,6 +29,14 @@ function assertNotBlocked(userId: string) {
   if (isPatronBlocked(profile)) {
     throw Object.assign(new Error("patron_blocked"), { status: 403 });
   }
+}
+
+function assertShopAccess(
+  userId: string,
+  email: string | null,
+  sellerUserId: string,
+) {
+  assertCanShopSeller(sellerUserId, { userId, email });
 }
 
 function basketResponse(userId: string) {
@@ -91,7 +100,8 @@ basketRouter.post("/me/basket/items", requireAuth, async (req, res) => {
     return;
   }
 
-  const userId = req.user!.userId;
+  const user = req.user!;
+  const userId = user.userId;
   const addQty = parsed.data.quantity ?? 1;
   const listingId = parsed.data.listingId;
 
@@ -102,6 +112,7 @@ basketRouter.post("/me/basket/items", requireAuth, async (req, res) => {
       if (!listing) {
         throw Object.assign(new Error("not_found"), { status: 404 });
       }
+      assertShopAccess(userId, user.email, listing.sellerUserId);
       if (listing.sellerUserId === userId && !isPantryMode()) {
         throw Object.assign(new Error("own_listing"), { status: 400 });
       }
@@ -159,6 +170,8 @@ basketRouter.post("/me/basket/items", requireAuth, async (req, res) => {
             ? "You already have the maximum allowed of this item in your basket."
           : code === "patron_blocked"
             ? "Your pantry access is currently blocked. Contact the pantry."
+          : code === "not_pantry_member"
+            ? "This pantry is limited to verified neighbors. Contact the pantry if you should have access."
           : code === "insufficient_stock"
             ? "Not enough stock for that quantity."
             : code === "unavailable"
@@ -192,7 +205,8 @@ basketRouter.patch("/me/basket/items/:listingId", requireAuth, async (req, res) 
     return;
   }
 
-  const userId = req.user!.userId;
+  const user = req.user!;
+  const userId = user.userId;
   const listingId = String(req.params.listingId ?? "");
 
   try {
@@ -221,6 +235,9 @@ basketRouter.patch("/me/basket/items/:listingId", requireAuth, async (req, res) 
       const listing = db.listings.find(l => l.id === listingId);
       if (!listing) {
         throw Object.assign(new Error("not_found"), { status: 404 });
+      }
+      if (qty > prevQty) {
+        assertShopAccess(userId, user.email, listing.sellerUserId);
       }
       if (qty > listingMaxPerOrder(listing)) {
         throw Object.assign(new Error("item_cap_exceeded"), { status: 409 });
@@ -264,6 +281,8 @@ basketRouter.patch("/me/basket/items/:listingId", requireAuth, async (req, res) 
             ? "That quantity exceeds the per-item cap for this food."
           : code === "patron_blocked"
             ? "Your pantry access is currently blocked. Contact the pantry."
+          : code === "not_pantry_member"
+            ? "This pantry is limited to verified neighbors. Contact the pantry if you should have access."
           : code === "insufficient_stock"
             ? "Not enough stock for that quantity."
             : "Could not update basket item.",
@@ -397,6 +416,7 @@ basketRouter.post("/me/basket/checkout", requireAuth, async (req, res) => {
         if (item.quantity > listingMaxPerOrder(listing)) {
           throw Object.assign(new Error("item_cap_exceeded"), { status: 409 });
         }
+        assertShopAccess(user.userId, user.email, listing.sellerUserId);
         if (sellerUserId == null) sellerUserId = listing.sellerUserId;
         else if (listing.sellerUserId !== sellerUserId) {
           throw Object.assign(new Error("mixed_sellers"), { status: 409 });
@@ -448,6 +468,10 @@ basketRouter.post("/me/basket/checkout", requireAuth, async (req, res) => {
         platformDisputeReason: null,
         platformDisputeOpenedBy: null,
         platformDisputeOpenedAt: null,
+        acceptedByUserId: null,
+        acceptedByName: null,
+        droppedOffByUserId: null,
+        droppedOffByName: null,
         completedReason: null,
         cancelledReason: null,
         createdAt: ts,
@@ -476,6 +500,8 @@ basketRouter.post("/me/basket/checkout", requireAuth, async (req, res) => {
                 ? "An item exceeds its per-item cap. Lower the quantity and try again."
                 : code === "mixed_sellers"
                   ? "Checkout one pantry at a time. Remove items from other pantries and try again."
+                  : code === "not_pantry_member"
+                    ? "This pantry is limited to verified neighbors. Contact the pantry if you should have access."
                   : "Could not check out basket.",
     });
     return;

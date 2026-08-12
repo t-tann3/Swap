@@ -2,12 +2,14 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import {
+  ClipboardList,
   Heart,
   Home,
   Package,
   ShoppingBasket,
   Shield,
   Store,
+  Users,
   UserRound,
 } from "lucide-react-native";
 import { useState } from "react";
@@ -31,6 +33,8 @@ import { PickupScreen } from "../screens/PickupScreen";
 import { RoleSetupScreen } from "../screens/RoleSetupScreen";
 import { SellScreen } from "../screens/SellScreen";
 import { SignInScreen } from "../screens/SignInScreen";
+import { MembersScreen } from "../screens/MembersScreen";
+import { TeamScreen } from "../screens/TeamScreen";
 import { VerifyCodeScreen } from "../screens/VerifyCodeScreen";
 import type {
   BuyerStackParamList,
@@ -151,9 +155,13 @@ function OrdersStackNavigator() {
 
 function MainTabs() {
   const { profile, pantryMode } = useMarketplace();
-  const isBuyer = profile?.roles.includes("buyer") ?? false;
-  const isSeller = profile?.roles.includes("seller") ?? false;
-  const isAdmin = profile?.roles.includes("admin") ?? false;
+  const roles = profile?.roles ?? [];
+  const isBuyer = roles.includes("buyer") && !roles.includes("seller");
+  const isSeller = roles.includes("seller") && !roles.includes("buyer");
+  const isAdmin =
+    roles.includes("admin") &&
+    !roles.includes("buyer") &&
+    !roles.includes("seller");
 
   return (
     <Tab.Navigator
@@ -221,16 +229,44 @@ function MainTabs() {
           }}
         />
       ) : null}
-      <Tab.Screen
-        name="OrdersTab"
-        component={OrdersStackNavigator}
-        options={{
-          title: "Orders",
-          tabBarIcon: ({ color, size }) => (
-            <Package color={color} size={size} strokeWidth={2.25} />
-          ),
-        }}
-      />
+      {isSeller && pantryMode ? (
+        <Tab.Screen
+          name="TeamTab"
+          component={TeamScreen}
+          options={{
+            title: "Team",
+            headerShown: true,
+            tabBarIcon: ({ color, size }) => (
+              <Users color={color} size={size} strokeWidth={2.25} />
+            ),
+          }}
+        />
+      ) : null}
+      {isSeller && pantryMode ? (
+        <Tab.Screen
+          name="MembersTab"
+          component={MembersScreen}
+          options={{
+            title: "Members",
+            headerShown: true,
+            tabBarIcon: ({ color, size }) => (
+              <ClipboardList color={color} size={size} strokeWidth={2.25} />
+            ),
+          }}
+        />
+      ) : null}
+      {isBuyer || isSeller ? (
+        <Tab.Screen
+          name="OrdersTab"
+          component={OrdersStackNavigator}
+          options={{
+            title: "Orders",
+            tabBarIcon: ({ color, size }) => (
+              <Package color={color} size={size} strokeWidth={2.25} />
+            ),
+          }}
+        />
+      ) : null}
       {isAdmin ? (
         <Tab.Screen
           name="AdminTab"
@@ -259,6 +295,18 @@ function MainTabs() {
   );
 }
 
+function marketplacePersona(
+  roles: string[] | undefined,
+): "buyer" | "seller" | "admin" | null {
+  const buyer = roles?.includes("buyer") ?? false;
+  const seller = roles?.includes("seller") ?? false;
+  const admin = roles?.includes("admin") ?? false;
+  if (buyer && !seller && !admin) return "buyer";
+  if (seller && !buyer && !admin) return "seller";
+  if (admin && !buyer && !seller) return "admin";
+  return null;
+}
+
 function SignedInFlow() {
   const { ready, profile } = useMarketplace();
 
@@ -270,7 +318,8 @@ function SignedInFlow() {
     );
   }
 
-  if (!profile || profile.roles.length === 0) {
+  // Exactly one marketplace persona — dual-role accounts re-pick.
+  if (!profile || !marketplacePersona(profile.roles)) {
     return <RoleSetupScreen />;
   }
 

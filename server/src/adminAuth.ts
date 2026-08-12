@@ -29,8 +29,28 @@ export function profileHasAdminRole(profile: Profile | undefined | null): boolea
 }
 
 /**
- * Sync allowlist → profile.roles.
- * Admin is grantable only via allowlist; allowlisted users may opt out via adminOptOut.
+ * Normalize to exactly one exclusive persona: buyer | seller | admin.
+ * Admin is never stacked on Neighbor/Pantry. Stacked legacy roles are cleared
+ * so the user re-picks on onboarding (allowlisted users see Admin there).
+ */
+export function exclusivePersonaRoles(
+  roles: MarketplaceRole[],
+  onAllowlist: boolean,
+): MarketplaceRole[] {
+  const buyer = roles.includes("buyer");
+  const seller = roles.includes("seller");
+  const admin = roles.includes("admin") && onAllowlist;
+
+  if (buyer && !seller && !admin) return ["buyer"];
+  if (seller && !buyer && !admin) return ["seller"];
+  if (admin && !buyer && !seller) return ["admin"];
+  // Dual marketplace, stacked admin+marketplace, or admin without allowlist → re-choose.
+  return [];
+}
+
+/**
+ * Sync allowlist + exclusive personas onto the profile.
+ * Does not auto-grant Admin onto Neighbor/Pantry accounts.
  */
 export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
   const onAllowlist = isAdminAllowlisted(user);
@@ -41,30 +61,14 @@ export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
     const idx = db.profiles.findIndex(p => p.userId === user.userId);
     if (idx >= 0) {
       const current = db.profiles[idx]!;
-      const marketplace = current.roles.filter(
-        (r): r is MarketplaceRole => r === "buyer" || r === "seller",
-      );
-      const adminOptOut = onAllowlist ? Boolean(current.adminOptOut) : false;
-      let roles: MarketplaceRole[];
-      if (onAllowlist && !adminOptOut) {
-        roles =
-          marketplace.length > 0
-            ? [...marketplace, "admin"]
-            : ["admin", "buyer", "seller"];
-      } else if (marketplace.length > 0) {
-        roles = marketplace;
-      } else if (onAllowlist && adminOptOut) {
-        // Opted out of admin with no marketplace roles — keep buyer/seller usable.
-        roles = ["buyer", "seller"];
-      } else {
-        roles = [];
-      }
+      const roles = exclusivePersonaRoles(current.roles, onAllowlist);
       profile = {
         ...current,
         email: user.email,
         name: user.name,
-        roles: [...new Set(roles)],
-        adminOptOut,
+        roles,
+        // Unused for stacking; kept for backward-compatible field.
+        adminOptOut: false,
         updatedAt: ts,
       };
       db.profiles[idx] = profile;
@@ -73,7 +77,7 @@ export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
         userId: user.userId,
         email: user.email,
         name: user.name,
-        roles: onAllowlist ? ["admin", "buyer", "seller"] : [],
+        roles: [],
         bio: "",
         stripeAccountId: null,
         stripePayoutsReady: false,
@@ -92,7 +96,7 @@ export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
   return profile!;
 }
 
-/** Profile JSON for clients, including whether they can toggle admin on. */
+/** Profile JSON for clients, including whether they may pick Admin account type. */
 export function profileClientPayload(user: AuthUser, profile: Profile) {
   const { pushDevices: _pushDevices, ...safe } = profile;
   return {
@@ -103,9 +107,7 @@ export function profileClientPayload(user: AuthUser, profile: Profile) {
 
 export function userIsAdmin(user: AuthUser): boolean {
   const profile = getDb().profiles.find(p => p.userId === user.userId);
-  if (profileHasAdminRole(profile)) return true;
-  // Allowlist alone is not enough if they opted out.
-  return false;
+  return profileHasAdminRole(profile);
 }
 
 /** Optional machine key for cron/scripts (not a substitute for the admin role in-app). */
@@ -116,7 +118,7 @@ function adminApiKeyMatches(req: Request): boolean {
 }
 
 /**
- * Admin gate: Relai session + `admin` role (from allowlist), or `x-admin-key` for automation.
+ * Admin gate: Relai session + exclusive `admin` role, or `x-admin-key` for automation.
  */
 export function requireAdmin(
   req: Request,
@@ -147,7 +149,7 @@ export function requireAdmin(
         res.status(403).json({
           code: "admin_required",
           message:
-            "Admin role required. Add your Relai user id or email to ADMIN_USER_IDS / ADMIN_EMAILS.",
+            "Admin account required. Sign in and choose Admin on the account type screen (allowlisted emails only).",
         });
         return;
       }
