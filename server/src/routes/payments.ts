@@ -81,6 +81,7 @@ paymentsRouter.post("/connect/onboard", requireAuth, async (req, res) => {
       isPantrySeller: false,
       pantryBlocked: false,
       adminOptOut: false,
+      pushDevices: [],
       createdAt: ts,
       updatedAt: ts,
     };

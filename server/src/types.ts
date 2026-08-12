@@ -56,6 +56,13 @@ export type DisputeStatus =
   | "warning_needs_response"
   | "warning_under_review";
 
+/** FCM device registration for push (server-only; stripped from client profile). */
+export interface PushDevice {
+  token: string;
+  platform: "ios" | "android";
+  updatedAt: string;
+}
+
 export interface Profile {
   userId: string;
   email: string | null;
@@ -80,6 +87,8 @@ export interface Profile {
    * Cleared when they re-enable admin or are removed from the allowlist.
    */
   adminOptOut: boolean;
+  /** Registered FCM tokens for this user (never returned to clients). */
+  pushDevices: PushDevice[];
   createdAt: string;
   updatedAt: string;
 }

@@ -11,6 +11,7 @@ import {
   refundEscrowPayment,
   releasePaymentOnPickup,
 } from "./payments.js";
+import { notifyOrderPickedUp } from "./push.js";
 import { fetchRelaiOrderStatus } from "./relai.js";
 import type {
   CancelledReason,
@@ -223,10 +224,12 @@ export async function finalizeOrderEscrow(
     const payout = await releasePaymentOnPickup(existing);
 
     let order: Order | undefined;
+    let justCompleted = false;
     await mutateDb(db => {
       order = db.orders.find(o => o.id === orderId)!;
       if (order.status === "completed" && order.stripeTransferId) return;
       const ts = new Date().toISOString();
+      justCompleted = true;
       order.status = "completed";
       order.completedReason = reason;
       order.cancelledReason = null;
@@ -239,6 +242,10 @@ export async function finalizeOrderEscrow(
       order.completedAt = order.completedAt ?? ts;
       finalizeListingsForOrder(db, order, ts);
     });
+    // Only a real neighbor pickup notifies the pantry (not no-show / admin release).
+    if (justCompleted && reason === "pickup") {
+      notifyOrderPickedUp(order!);
+    }
     return order!;
   });
 }

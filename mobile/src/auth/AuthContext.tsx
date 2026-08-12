@@ -11,6 +11,11 @@ import {
 } from "react";
 
 import { getRelai, initRelai } from "../relai/client";
+import {
+  registerForPushNotifications,
+  subscribePushTokenRefresh,
+  unregisterPushNotifications,
+} from "../push/notifications";
 
 type AuthStatus = "booting" | "signedOut" | "signedIn";
 
@@ -81,6 +86,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshMe]);
 
+  useEffect(() => {
+    if (status !== "signedIn") return;
+    void registerForPushNotifications().catch(() => {
+      // Permission denied / simulator — app still works.
+    });
+    return subscribePushTokenRefresh();
+  }, [status]);
+
   const sendCode = useCallback(async (email: string) => {
     setLastError(null);
     try {
@@ -112,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setLastError(null);
+    await unregisterPushNotifications();
     try {
       await getRelai().auth.signOut();
     } catch {

@@ -5,6 +5,7 @@ import { getStripe, paymentsEnabled, publishableKey } from "./stripe.js";
 import { stripeWebhooksConfigured } from "./routes/stripeWebhook.js";
 import { relaiWebhooksConfigured } from "./routes/relaiWebhook.js";
 import { adminApiConfigured } from "./adminAuth.js";
+import { pushConfigured } from "./push.js";
 
 export type CheckStatus = "ok" | "fail" | "skip";
 
@@ -29,6 +30,7 @@ export type HealthReport = {
     relaiServerApiConfigured: boolean;
     adminApiConfigured: boolean;
     stripePublishableConfigured: boolean;
+    pushConfigured: boolean;
   };
 };
 
@@ -124,6 +126,7 @@ export async function buildHealthReport(): Promise<HealthReport> {
       relaiServerApiConfigured: relaiServerApiConfigured(),
       adminApiConfigured: adminApiConfigured(),
       stripePublishableConfigured: Boolean(publishableKey()),
+      pushConfigured: pushConfigured(),
     },
   };
 }

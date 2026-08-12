@@ -32,6 +32,7 @@ import {
   sellerNeedsPayouts,
   syncListingStockStatus,
 } from "../pantry.js";
+import { notifyOrderAccepted, notifyOrderReadyForPickup } from "../push.js";
 import { SEED_SELLER_USER_ID } from "../seed.js";
 import { paymentsEnabled } from "../stripe.js";
 import type { Listing, MarketplaceRole, Order, Profile } from "../types.js";
@@ -220,6 +221,7 @@ marketplaceRouter.put("/me/profile", requireAuth, async (req, res) => {
         isPantrySeller: false,
         pantryBlocked: false,
         adminOptOut,
+        pushDevices: [],
         createdAt: ts,
         updatedAt: ts,
       };
@@ -727,6 +729,7 @@ marketplaceRouter.post("/orders/:id/accept", requireAuth, async (req, res) => {
     order.sellerDropOffDeadlineAt = deadlineFromNow(sellerDropOffHours(), ts);
     order.updatedAt = ts;
   });
+  notifyOrderAccepted(order!);
   res.json(enrichOrder(order!));
 });
 
@@ -794,6 +797,7 @@ marketplaceRouter.post("/orders/:id/drop-off", requireAuth, async (req, res) => 
     order.dropOffPhotoUrl = parsed.data.dropOffPhotoUrl || null;
     order.updatedAt = ts;
   });
+  notifyOrderReadyForPickup(order!);
   res.json(enrichOrder(order!));
 });
 

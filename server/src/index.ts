@@ -25,6 +25,8 @@ import {
   stripeWebhooksConfigured,
 } from "./routes/stripeWebhook.js";
 import { uploadsRouter } from "./routes/uploads.js";
+import { pushRouter } from "./routes/push.js";
+import { initFirebaseAdmin, pushConfigured } from "./push.js";
 import { relaiServerApiConfigured } from "./relai.js";
 import { paymentsEnabled } from "./stripe.js";
 import { ensureUploadsDir, uploadsDir } from "./uploads.js";
@@ -74,6 +76,7 @@ app.get("/health", async (_req, res) => {
 app.use("/api", marketplaceRouter);
 app.use("/api", basketRouter);
 app.use("/api", productsRouter);
+app.use("/api", pushRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/admin", adminRouter);
 
@@ -95,6 +98,7 @@ app.use(
 
 await ensureUploadsDir();
 await initDb();
+initFirebaseAdmin();
 startEscrowScheduler();
 
 app.listen(port, () => {
@@ -106,5 +110,6 @@ app.listen(port, () => {
     relaiWebhooksConfigured: relaiWebhooksConfigured(),
     relaiServerApiConfigured: relaiServerApiConfigured(),
     adminApiConfigured: adminApiConfigured(),
+    pushConfigured: pushConfigured(),
   });
 });

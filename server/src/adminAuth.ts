@@ -81,6 +81,7 @@ export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
         isPantrySeller: false,
         pantryBlocked: false,
         adminOptOut: false,
+        pushDevices: [],
         createdAt: ts,
         updatedAt: ts,
       };
@@ -93,8 +94,9 @@ export async function syncAdminRoleForUser(user: AuthUser): Promise<Profile> {
 
 /** Profile JSON for clients, including whether they can toggle admin on. */
 export function profileClientPayload(user: AuthUser, profile: Profile) {
+  const { pushDevices: _pushDevices, ...safe } = profile;
   return {
-    ...profile,
+    ...safe,
     adminEligible: isAdminAllowlisted(user),
   };
 }

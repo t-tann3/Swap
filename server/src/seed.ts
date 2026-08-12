@@ -50,6 +50,7 @@ export function createSeedDatabase(): Database {
         isPantrySeller: true,
         pantryBlocked: false,
         adminOptOut: false,
+        pushDevices: [],
         createdAt: ts,
         updatedAt: ts,
       },

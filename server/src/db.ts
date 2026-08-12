@@ -42,6 +42,7 @@ function migrateDb(current: Database): Database {
     if (p.isPantrySeller === undefined) p.isPantrySeller = false;
     if (p.pantryBlocked === undefined) p.pantryBlocked = false;
     if (p.adminOptOut === undefined) p.adminOptOut = false;
+    if (!Array.isArray(p.pushDevices)) p.pushDevices = [];
   }
   for (const listing of current.listings) {
     const l = listing as Listing & { compartmentSize?: unknown };
