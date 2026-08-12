@@ -1,0 +1,13 @@
+**/node_modules
+**/.next
+**/dist
+**/data
+**/.env
+**/.env*.local
+**/ios
+**/android
+mobile
+.git
+**/.DS_Store
+*.md
+agent-transcripts

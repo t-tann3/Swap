@@ -1,0 +1,58 @@
+# Swap — API + web + photo volume + Caddy (HTTPS)
+#
+# On the Droplet:
+#   1. Copy repo + fill .env (see deploy/env.example)
+#   2. Put server secrets in server/.env
+#   3. docker compose up -d --build
+
+services:
+  api:
+    build:
+      context: ./server
+    env_file:
+      - ./server/.env
+    environment:
+      PORT: "4000"
+    volumes:
+      # Persist listing / compartment photos across redeploys
+      - swap_uploads:/app/data/uploads
+    restart: unless-stopped
+    expose:
+      - "4000"
+
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_RELAI_PUBLISHABLE_KEY: ${NEXT_PUBLIC_RELAI_PUBLISHABLE_KEY}
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    restart: unless-stopped
+    expose:
+      - "3000"
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_HOST: ${API_HOST}
+      APP_HOST: ${APP_HOST}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+
+volumes:
+  swap_uploads:
+  caddy_data:
+  caddy_config:

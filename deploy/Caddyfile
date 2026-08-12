@@ -1,0 +1,9 @@
+{$API_HOST} {
+	encode gzip
+	reverse_proxy api:4000
+}
+
+{$APP_HOST} {
+	encode gzip
+	reverse_proxy web:3000
+}
