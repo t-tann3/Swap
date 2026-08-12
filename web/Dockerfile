@@ -1,7 +1,8 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# Prefer install over ci: lockfile nested optional deps can fail npm ci on newer npm.
+RUN npm install --no-audit --no-fund
 
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
