@@ -8,6 +8,7 @@ import {
 } from "./pantry.js";
 import {
   cancelAuthorizedPayment,
+  refreshSellerPayoutReadiness,
   refundEscrowPayment,
   releasePaymentOnPickup,
 } from "./payments.js";
@@ -187,9 +188,11 @@ export async function finalizeOrderEscrow(
       throw Object.assign(new Error("not_found"), { status: 404 });
     }
     if (existing.status === "completed") {
-      // Allow retrying a stuck capture→transfer after a prior partial finalize.
+      // Allow retrying a stuck capture→transfer after a prior partial finalize,
+      // or paying out a credit once the seller finishes payout setup.
       if (
-        existing.paymentStatus === "captured" &&
+        (existing.paymentStatus === "captured" ||
+          existing.paymentStatus === "credited") &&
         !existing.stripeTransferId &&
         !existing.adminHold
       ) {
@@ -376,10 +379,11 @@ export async function adminForceRefund(
     return refundOrderEscrow(orderId, cancelledReason, { allowDisputed: true });
   }
 
-  // Completed but money still recoverable (captured stuck, or transferred).
+  // Completed but money still recoverable (captured stuck, credited, or transferred).
   if (
     existing.status === "completed" &&
     (existing.paymentStatus === "captured" ||
+      existing.paymentStatus === "credited" ||
       existing.paymentStatus === "transferred" ||
       existing.paymentStatus === "disputed" ||
       existing.paymentStatus === "authorized")
@@ -500,9 +504,11 @@ export async function retryStuckTransfer(orderId: string): Promise<Order> {
     if (existing.stripeTransferId || existing.paymentStatus === "transferred") {
       return existing;
     }
-    // Stuck capture (with or without completed marketplace status), or auth still to capture.
+    // Stuck capture (with or without completed marketplace status), a credit
+    // awaiting payout setup, or an auth still to capture.
     if (
       existing.paymentStatus !== "captured" &&
+      existing.paymentStatus !== "credited" &&
       existing.paymentStatus !== "authorized"
     ) {
       throw Object.assign(new Error("invalid_status"), { status: 409 });
@@ -521,6 +527,81 @@ export async function retryStuckTransfer(orderId: string): Promise<Order> {
     });
     return order!;
   });
+}
+
+function creditedOrdersFor(sellerUserId: string): Order[] {
+  return getDb().orders.filter(
+    o =>
+      o.sellerUserId === sellerUserId &&
+      o.paymentStatus === "credited" &&
+      !o.stripeTransferId &&
+      !o.adminHold,
+  );
+}
+
+/**
+ * Pay out everything a seller earned before they finished payout setup.
+ * Safe to call repeatedly: orders that cannot transfer yet stay credited.
+ */
+export async function settleSellerCredits(sellerUserId: string): Promise<{
+  settled: number;
+  pending: number;
+}> {
+  const due = creditedOrdersFor(sellerUserId);
+  if (due.length === 0) return { settled: 0, pending: 0 };
+
+  let settled = 0;
+  for (const order of due) {
+    try {
+      await retryStuckTransfer(order.id);
+      const latest = getDb().orders.find(o => o.id === order.id);
+      if (latest?.stripeTransferId) settled += 1;
+    } catch (err) {
+      log.warn("escrow_credit_settle_failed", {
+        orderId: order.id,
+        sellerUserId,
+        errMessage: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  if (settled > 0) {
+    log.info("escrow_credits_settled", { sellerUserId, settled });
+  }
+  return { settled, pending: creditedOrdersFor(sellerUserId).length };
+}
+
+/** Pay out held credits for sellers who have since connected a bank account. */
+export async function sweepSellerCredits(): Promise<{
+  checked: number;
+  settled: number;
+  sellersPending: number;
+}> {
+  const sellerIds = [
+    ...new Set(
+      getDb()
+        .orders.filter(o => o.paymentStatus === "credited" && !o.adminHold)
+        .map(o => o.sellerUserId),
+    ),
+  ];
+
+  let settled = 0;
+  let sellersPending = 0;
+  for (const sellerUserId of sellerIds) {
+    // One readiness probe per seller — skip entirely while they cannot be paid.
+    const ready = await refreshSellerPayoutReadiness(sellerUserId).catch(
+      () => false,
+    );
+    if (!ready) {
+      sellersPending += 1;
+      continue;
+    }
+    const result = await settleSellerCredits(sellerUserId);
+    settled += result.settled;
+    if (result.pending > 0) sellersPending += 1;
+  }
+
+  return { checked: sellerIds.length, settled, sellersPending };
 }
 
 export function listEscrowAttentionOrders(filter?: string): Order[] {
@@ -683,13 +764,21 @@ export async function runAllEscrowSweeps(): Promise<{
   noShow: Awaited<ReturnType<typeof sweepBuyerNoShows>>;
   sellerTimeout: Awaited<ReturnType<typeof sweepSellerTimeouts>>;
   stuckTransfer: Awaited<ReturnType<typeof sweepStuckTransfers>>;
+  sellerCredits: Awaited<ReturnType<typeof sweepSellerCredits>>;
   abandonedBaskets: Awaited<ReturnType<typeof sweepAbandonedBaskets>>;
 }> {
   const noShow = await sweepBuyerNoShows();
   const sellerTimeout = await sweepSellerTimeouts();
   const stuckTransfer = await sweepStuckTransfers();
+  const sellerCredits = await sweepSellerCredits();
   const abandonedBaskets = await sweepAbandonedBaskets();
-  return { noShow, sellerTimeout, stuckTransfer, abandonedBaskets };
+  return {
+    noShow,
+    sellerTimeout,
+    stuckTransfer,
+    sellerCredits,
+    abandonedBaskets,
+  };
 }
 
 export function mapStripeDisputeStatus(status: string): DisputeStatus {

@@ -95,6 +95,7 @@ vi.mock("../src/payments.js", () => ({
     stripeRefundId: "re_1",
   })),
   cancelAuthorizedPayment: vi.fn(async () => undefined),
+  refreshSellerPayoutReadiness: vi.fn(async () => false),
 }));
 
 vi.mock("../src/relai.js", () => ({
@@ -164,6 +165,56 @@ describe("escrow finalize / refund", () => {
     await expect(finalizeOrderEscrow("ord_test", "pickup")).rejects.toMatchObject(
       { message: "payment_disputed" },
     );
+  });
+
+  it("completes the sale and credits a seller without payout setup", async () => {
+    const payments = await import("../src/payments.js");
+    vi.mocked(payments.releasePaymentOnPickup).mockResolvedValueOnce({
+      paymentStatus: "credited",
+      stripeTransferId: null,
+    });
+
+    const { finalizeOrderEscrow } = await import("../src/escrow.js");
+    const order = await finalizeOrderEscrow("ord_test", "pickup");
+
+    expect(order.status).toBe("completed");
+    expect(order.paymentStatus).toBe("credited");
+    expect(order.stripeTransferId).toBeNull();
+  });
+
+  it("settles held credits once the seller can be paid", async () => {
+    orders.set(
+      "ord_test",
+      baseOrder({
+        status: "completed",
+        paymentStatus: "credited",
+        completedReason: "pickup",
+      }),
+    );
+
+    const { settleSellerCredits } = await import("../src/escrow.js");
+    const result = await settleSellerCredits("seller_1");
+
+    expect(result).toEqual({ settled: 1, pending: 0 });
+    expect(orders.get("ord_test")?.paymentStatus).toBe("transferred");
+    expect(orders.get("ord_test")?.stripeTransferId).toBe("tr_1");
+  });
+
+  it("leaves credits held while the seller still cannot be paid", async () => {
+    orders.set(
+      "ord_test",
+      baseOrder({
+        status: "completed",
+        paymentStatus: "credited",
+        completedReason: "pickup",
+      }),
+    );
+
+    const { sweepSellerCredits } = await import("../src/escrow.js");
+    const result = await sweepSellerCredits();
+
+    expect(result).toEqual({ checked: 1, settled: 0, sellersPending: 1 });
+    expect(orders.get("ord_test")?.paymentStatus).toBe("credited");
   });
 
   it("opens a platform dispute and freezes the order", async () => {

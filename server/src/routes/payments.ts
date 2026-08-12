@@ -3,10 +3,13 @@ import { z } from "zod";
 
 import { requireAuth } from "../auth.js";
 import { getDb, mutateDb } from "../db.js";
+import { settleSellerCredits } from "../escrow.js";
+import { log } from "../logger.js";
 import {
   createListingPaymentIntent,
   ensureSellerConnectAccount,
   refreshSellerPayoutReadiness,
+  sellerCreditedCents,
 } from "../payments.js";
 import {
   appBaseUrl,
@@ -40,6 +43,7 @@ paymentsRouter.get("/connect/status", requireAuth, async (req, res) => {
       enabled: false,
       stripeAccountId: profile?.stripeAccountId ?? null,
       payoutsReady: true,
+      creditedCents: 0,
       pantryMode: isPantryMode(),
       isPantrySeller: Boolean(profile?.isPantrySeller),
     });
@@ -48,11 +52,26 @@ paymentsRouter.get("/connect/status", requireAuth, async (req, res) => {
   const payoutsReady = profile?.stripeAccountId
     ? await refreshSellerPayoutReadiness(user.userId)
     : false;
+
+  // Onboarding just finished — release anything earned before setup.
+  if (payoutsReady && sellerCreditedCents(user.userId) > 0) {
+    try {
+      await settleSellerCredits(user.userId);
+    } catch (err) {
+      log.warn("connect_status_settle_failed", {
+        userId: user.userId,
+        errMessage: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   const latest = getDb().profiles.find(p => p.userId === user.userId);
   res.json({
     enabled: true,
     stripeAccountId: latest?.stripeAccountId ?? null,
     payoutsReady,
+    /** Earned before payout setup and still held on the platform balance. */
+    creditedCents: sellerCreditedCents(user.userId),
   });
 });
 

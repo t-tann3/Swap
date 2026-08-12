@@ -29,6 +29,7 @@ export function AccountScreen() {
   const roles = profile?.roles ?? [];
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [payoutsReady, setPayoutsReady] = useState(false);
+  const [creditedCents, setCreditedCents] = useState(0);
   const [connectBusy, setConnectBusy] = useState(false);
 
   useFocusEffect(
@@ -38,9 +39,11 @@ export function AccountScreen() {
           const status = await apiRequest<{
             enabled: boolean;
             payoutsReady: boolean;
+            creditedCents?: number;
           }>("/api/payments/connect/status", { auth: true });
           setPaymentsEnabled(status.enabled);
           setPayoutsReady(status.payoutsReady);
+          setCreditedCents(status.creditedCents ?? 0);
         } catch {
           // ignore
         }
@@ -131,10 +134,17 @@ export function AccountScreen() {
         <>
           <Text style={[styles.heading, styles.section]}>Pantry payouts</Text>
           <Text style={styles.meta}>
-            Status: {payoutsReady ? "Ready" : "Setup required"}
+            Status: {payoutsReady ? "Ready" : "Not set up"}
           </Text>
+          {creditedCents > 0 ? (
+            <Text style={styles.meta}>
+              Waiting for you: ${(creditedCents / 100).toFixed(2)}
+            </Text>
+          ) : null}
           <Text style={styles.meta}>
-            Neighbor payment is held until pickup, then transferred to you.
+            {payoutsReady
+              ? "Neighbor payment is held until pickup, then transferred to you."
+              : "You can list and sell right now. Add a bank account when you want to withdraw — earnings are held for you until then."}
           </Text>
           {!payoutsReady ? (
             <Pressable
@@ -142,7 +152,11 @@ export function AccountScreen() {
               disabled={connectBusy}
               onPress={() => void startConnect()}>
               <Text style={styles.buttonText}>
-                {connectBusy ? "Opening Stripe…" : "Set up Stripe payouts"}
+                {connectBusy
+                  ? "Opening Stripe…"
+                  : creditedCents > 0
+                    ? "Withdraw earnings"
+                    : "Set up payouts"}
               </Text>
             </Pressable>
           ) : null}

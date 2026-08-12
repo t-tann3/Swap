@@ -6,9 +6,11 @@ import {
   applyDisputeClosed,
   applyDisputeOpened,
   mapStripeDisputeStatus,
+  settleSellerCredits,
 } from "../escrow.js";
 import {
   findOrderByPaymentIntentId,
+  findProfileByStripeAccountId,
   refreshPayoutReadinessByAccountId,
 } from "../payments.js";
 import { getStripe, paymentsEnabled } from "../stripe.js";
@@ -37,11 +39,22 @@ function orderIdFromTransfer(transfer: Stripe.Transfer): string | undefined {
   return transfer.metadata?.order_id || undefined;
 }
 
+/**
+ * Refresh payout readiness and, when an account becomes payable, transfer the
+ * seller's held credits from sales made before they finished onboarding.
+ */
+async function settleCreditsIfNowPayable(stripeAccountId: string): Promise<void> {
+  const ready = await refreshPayoutReadinessByAccountId(stripeAccountId);
+  if (!ready) return;
+  const profile = findProfileByStripeAccountId(stripeAccountId);
+  if (profile) await settleSellerCredits(profile.userId);
+}
+
 async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   switch (event.type) {
     case "account.updated": {
       const account = event.data.object as Stripe.Account;
-      await refreshPayoutReadinessByAccountId(account.id);
+      await settleCreditsIfNowPayable(account.id);
       break;
     }
     case "capability.updated": {
@@ -51,7 +64,7 @@ async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           ? capability.account
           : capability.account?.id;
       if (accountId) {
-        await refreshPayoutReadinessByAccountId(accountId);
+        await settleCreditsIfNowPayable(accountId);
       }
       break;
     }

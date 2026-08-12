@@ -167,26 +167,47 @@ function chargeIdFromPi(pi: Stripe.PaymentIntent): string | undefined {
   return pi.latest_charge?.id;
 }
 
-async function resolveSellerDestination(order: Order): Promise<{
-  sellerId: string;
-  stripeAccountId: string;
-}> {
-  let sellerId = order.sellerUserId;
-  if (sellerId === SEED_SELLER_USER_ID) {
-    throw Object.assign(new Error("seller_payouts_unavailable"), { status: 409 });
+/**
+ * Connect destination for a seller, or null when they cannot receive money yet.
+ * Selling never requires Stripe onboarding — an unonboarded seller's share is
+ * held on the platform balance as a credit instead.
+ */
+async function sellerPayoutDestination(sellerId: string): Promise<string | null> {
+  if (sellerId === SEED_SELLER_USER_ID) return null;
+  if (!getDb().profiles.find(p => p.userId === sellerId)?.stripeAccountId) {
+    return null;
   }
   const ready = await refreshSellerPayoutReadiness(sellerId);
-  const seller = getDb().profiles.find(p => p.userId === sellerId);
-  if (!ready || !seller?.stripeAccountId) {
-    throw Object.assign(new Error("seller_payouts_unavailable"), { status: 409 });
-  }
-  return { sellerId, stripeAccountId: seller.stripeAccountId };
+  if (!ready) return null;
+  // Re-read: the readiness probe writes, which swaps the in-memory db object.
+  return (
+    getDb().profiles.find(p => p.userId === sellerId)?.stripeAccountId ?? null
+  );
+}
+
+/** Seller share still held on the platform balance, awaiting payout setup. */
+export function sellerCreditedCents(sellerUserId: string): number {
+  return getDb()
+    .orders.filter(
+      o => o.sellerUserId === sellerUserId && o.paymentStatus === "credited",
+    )
+    .reduce(
+      (sum, o) => sum + sellerTransferCents(o.priceCents).transferCents,
+      0,
+    );
+}
+
+export function findProfileByStripeAccountId(
+  stripeAccountId: string,
+): Profile | undefined {
+  return getDb().profiles.find(p => p.stripeAccountId === stripeAccountId);
 }
 
 /**
- * Capture platform PaymentIntent (if needed) then transfer seller share.
- * Seller Connect readiness is checked before capture so we do not take funds
- * we cannot pay out. Capture + transfer use Stripe idempotency keys.
+ * Capture platform PaymentIntent (if needed) then transfer the seller share.
+ * Capture is never gated on Connect onboarding: buyers have already been
+ * promised the handoff, so funds are taken and the share is credited to the
+ * seller when they cannot be paid yet. Capture + transfer use idempotency keys.
  */
 export async function releasePaymentOnPickup(order: Order): Promise<{
   paymentStatus: PaymentStatus;
@@ -208,8 +229,7 @@ export async function releasePaymentOnPickup(order: Order): Promise<{
     };
   }
 
-  const { sellerId, stripeAccountId } = await resolveSellerDestination(latest);
-
+  const sellerId = latest.sellerUserId;
   const stripe = getStripe();
   const piId = latest.stripePaymentIntentId!;
   let pi = await stripe.paymentIntents.retrieve(piId);
@@ -241,6 +261,11 @@ export async function releasePaymentOnPickup(order: Order): Promise<{
   const source = chargeIdFromPi(pi);
   if (!source) {
     throw Object.assign(new Error("payment_capture_failed"), { status: 402 });
+  }
+
+  const stripeAccountId = await sellerPayoutDestination(sellerId);
+  if (!stripeAccountId) {
+    return { paymentStatus: "credited", stripeTransferId: null };
   }
 
   try {

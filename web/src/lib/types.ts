@@ -15,6 +15,8 @@ export type PaymentStatus =
   | "none"
   | "authorized"
   | "captured"
+  /** Held for the seller until they finish payout setup. */
+  | "credited"
   | "transferred"
   | "cancelled"
   | "refunded"

@@ -25,6 +25,12 @@ export type PaymentStatus =
   | "none"
   | "authorized"
   | "captured"
+  /**
+   * Captured to the platform balance with the seller's share owed to them.
+   * Sellers can trade before Stripe payout setup; credits settle as transfers
+   * once their Connect account can receive money.
+   */
+  | "credited"
   | "transferred"
   | "cancelled"
   | "refunded"

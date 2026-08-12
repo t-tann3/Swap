@@ -24,6 +24,7 @@ export default function AccountPage() {
   const roles = profile?.roles ?? [];
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [payoutsReady, setPayoutsReady] = useState(false);
+  const [creditedCents, setCreditedCents] = useState(0);
   const [connectBusy, setConnectBusy] = useState(false);
   const [connectMsg, setConnectMsg] = useState<string | null>(null);
 
@@ -33,9 +34,11 @@ export default function AccountPage() {
         const status = await apiRequest<{
           enabled: boolean;
           payoutsReady: boolean;
+          creditedCents?: number;
         }>("/api/payments/connect/status", { auth: true });
         setPaymentsEnabled(status.enabled);
         setPayoutsReady(status.payoutsReady);
+        setCreditedCents(status.creditedCents ?? 0);
       } catch {
         // ignore
       }
@@ -50,12 +53,13 @@ export default function AccountPage() {
           ? "Returned from Stripe. Refreshing payout status…"
           : "Restart Connect onboarding if setup is incomplete.",
       );
-      void apiRequest<{ payoutsReady: boolean }>(
+      void apiRequest<{ payoutsReady: boolean; creditedCents?: number }>(
         "/api/payments/connect/status",
         { auth: true },
       )
         .then(s => {
           setPayoutsReady(s.payoutsReady);
+          setCreditedCents(s.creditedCents ?? 0);
           setPaymentsEnabled(true);
         })
         .finally(() => void refresh());
@@ -173,13 +177,18 @@ export default function AccountPage() {
         <div className="mt-8">
           <h2 className="text-lg font-semibold">Pantry payouts</h2>
           <p className="mt-2 text-sm text-zinc-600">
-            Stripe Connect holds neighbor payments until pickup, then transfers
-            your share (minus platform fee).
+            {payoutsReady
+              ? "Neighbor payments are held until pickup, then transferred to you (minus platform fee)."
+              : "You can list and sell right now. Add a bank account when you want to withdraw — your earnings are held for you until then."}
           </p>
           <p className="mt-2 text-sm font-medium">
-            Status:{" "}
-            {payoutsReady ? "Ready to receive payouts" : "Setup required"}
+            Status: {payoutsReady ? "Ready to receive payouts" : "Not set up"}
           </p>
+          {creditedCents > 0 ? (
+            <p className="mt-1 text-sm font-medium">
+              Waiting for you: ${(creditedCents / 100).toFixed(2)}
+            </p>
+          ) : null}
           {connectMsg ? (
             <p className="mt-2 text-sm text-zinc-600">{connectMsg}</p>
           ) : null}
@@ -190,7 +199,11 @@ export default function AccountPage() {
               onClick={() => void startConnect()}
               className="mt-4 w-full rounded-xl bg-zinc-900 py-3 font-semibold text-white disabled:opacity-50"
             >
-              {connectBusy ? "Opening Stripe…" : "Set up Stripe payouts"}
+              {connectBusy
+                ? "Opening Stripe…"
+                : creditedCents > 0
+                  ? "Withdraw earnings"
+                  : "Set up payouts"}
             </button>
           ) : null}
         </div>
