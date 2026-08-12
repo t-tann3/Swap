@@ -80,7 +80,8 @@ async function checkRelai(): Promise<DependencyCheck> {
   // Connectivity probe — any HTTP response means the Relai edge is reachable.
   const started = Date.now();
   try {
-    const res = await fetch("https://api.relai.us/", {
+    // Same host the app uses (auth.ts / Relai client), not api.relai.us.
+    const res = await fetch("https://access.relai.us/", {
       method: "GET",
       headers: { Accept: "application/json" },
     });
