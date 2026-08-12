@@ -323,10 +323,23 @@ export async function initDb(): Promise<void> {
   }
 }
 
+/**
+ * Run `task` after any in-flight write finishes.
+ * The chain itself is kept settled so one rejected task (e.g. a validation
+ * error thrown by a mutator) cannot poison every later write.
+ */
+function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+  const run = writeChain.then(task);
+  writeChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 /** Pull the latest documents from Mongo into memory (serialized). */
 export async function refreshDb(): Promise<Database> {
-  writeChain = writeChain.then(() => reloadIntoMemory());
-  await writeChain;
+  await enqueueWrite(() => reloadIntoMemory());
   return db;
 }
 
@@ -341,10 +354,16 @@ export function getDb(): Database {
 export async function mutateDb(
   mutator: (current: Database) => void,
 ): Promise<Database> {
-  writeChain = writeChain.then(async () => {
+  await enqueueWrite(async () => {
     await reloadIntoMemory();
     const beforeOrders = db.orders.length;
-    mutator(db);
+    try {
+      mutator(db);
+    } catch (err) {
+      // A rejected mutation may have edited memory before it threw.
+      await reloadIntoMemory();
+      throw err;
+    }
     await persistToMongo(db);
     if (db.orders.length !== beforeOrders) {
       log.info("orders_persisted", {
@@ -353,7 +372,6 @@ export async function mutateDb(
       });
     }
   });
-  await writeChain;
   return db;
 }
 
@@ -366,11 +384,10 @@ export async function getMongoPing(): Promise<void> {
 }
 
 export async function resetDb(): Promise<Database> {
-  writeChain = writeChain.then(async () => {
+  await enqueueWrite(async () => {
     db = migrateDb(createSeedDatabase());
     await persistToMongo(db);
   });
-  await writeChain;
   return db;
 }
 

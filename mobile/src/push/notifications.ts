@@ -1,4 +1,10 @@
-import messaging from "@react-native-firebase/messaging";
+import {
+  AuthorizationStatus,
+  getMessaging,
+  getToken,
+  onTokenRefresh,
+  requestPermission,
+} from "@react-native-firebase/messaging";
 import { Platform } from "react-native";
 
 import { apiRequest } from "../api/client";
@@ -15,15 +21,14 @@ export async function registerForPushNotifications(): Promise<void> {
   const platform = currentPlatform();
   if (!platform) return;
 
-  await messaging().registerDeviceForRemoteMessages();
-
-  const authStatus = await messaging().requestPermission();
+  const messaging = getMessaging();
+  const authStatus = await requestPermission(messaging);
   const enabled =
-    authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-    authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+    authStatus === AuthorizationStatus.AUTHORIZED ||
+    authStatus === AuthorizationStatus.PROVISIONAL;
   if (!enabled) return;
 
-  const token = await messaging().getToken();
+  const token = await getToken(messaging);
   if (!token) return;
 
   await apiRequest("/api/me/push-token", {
@@ -36,7 +41,7 @@ export async function registerForPushNotifications(): Promise<void> {
 /** Best-effort remove this device token before sign-out. */
 export async function unregisterPushNotifications(): Promise<void> {
   try {
-    const token = await messaging().getToken();
+    const token = await getToken(getMessaging());
     if (!token) return;
     await apiRequest("/api/me/push-token", {
       auth: true,
@@ -50,7 +55,7 @@ export async function unregisterPushNotifications(): Promise<void> {
 
 /** Keep API in sync when FCM rotates the token. */
 export function subscribePushTokenRefresh(): () => void {
-  return messaging().onTokenRefresh(token => {
+  return onTokenRefresh(getMessaging(), token => {
     const platform = currentPlatform();
     if (!platform) return;
     void apiRequest("/api/me/push-token", {
